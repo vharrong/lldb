@@ -86,6 +86,9 @@ namespace lldb_private {
         GetSoftwareBreakpointTrapOpcode (Target &target, 
                                          BreakpointSite *bp_site) override;
 
+        int32_t
+        GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info) override;
+
         lldb_private::Error
         LaunchProcess (lldb_private::ProcessLaunchInfo &launch_info) override;
 

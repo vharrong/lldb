@@ -38,6 +38,9 @@
 #include "../../Process/Linux/NativeProcessLinux.h"
 #endif
 
+// Define this flag to use LLGS for local debugging rather than ProcessLinux/ProcessPOSIX and ProcessMonitor.
+#define LLDB_USE_LLGS_FOR_LOCAL_DEBUGGING
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -437,6 +440,18 @@ PlatformLinux::GetSoftwareBreakpointTrapOpcode (Target &target,
     return 0;
 }
 
+int32_t
+PlatformLinux::GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info)
+{
+    int32_t resume_count = 0;
+
+    // If we launch for debug, then we need to resume once past the PTRACE_TRACEME stop.
+    if (launch_info.GetFlags().Test(eLaunchFlagDebug))
+        ++resume_count;
+
+    return resume_count;
+}
+
 Error
 PlatformLinux::LaunchProcess (ProcessLaunchInfo &launch_info)
 {
@@ -487,7 +502,11 @@ PlatformLinux::CanDebugProcess ()
 {
     // If we're the host, launch via normal host setup.
     if (IsHost ())
+#if defined (LLDB_USE_LLGS_FOR_LOCAL_DEBUGGING)
+        return true;
+#else
         return false;
+#endif
 
     // If we're connected, we can debug.
     return IsConnected ();

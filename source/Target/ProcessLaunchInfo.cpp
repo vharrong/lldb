@@ -436,9 +436,12 @@ ProcessLaunchInfo::ConvertArgumentsForLaunchingInShell (Error &error,
                 }
 
                 shell_command.PutCString ("exec");
-
+#if defined (__APPLE__)
                 // Only Apple supports /usr/bin/arch being able to specify the architecture
                 if (GetArchitecture().IsValid())
+#else
+                if (false)
+#endif
                 {
                     shell_command.Printf(" /usr/bin/arch -arch %s", GetArchitecture().GetArchitectureName());
                     // Set the resume count to 2:

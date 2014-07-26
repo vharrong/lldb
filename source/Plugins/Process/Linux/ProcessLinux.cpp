@@ -28,6 +28,9 @@
 using namespace lldb;
 using namespace lldb_private;
 
+// Define the flag below if we want to use LLGS for local debugging.
+#define LLDB_USE_LLGS_FOR_LOCAL_DEBUGGING
+
 //------------------------------------------------------------------------------
 // Static functions.
 
@@ -218,6 +221,11 @@ ProcessLinux::CanDebug(Target &target, bool plugin_specified_by_name)
     if (m_core_file)
         return false;
 
+    // If we're using LLGS for local debugging, we don't use ProcessLinux/ProcessPOSIX for debugging.
+#if defined (LLDB_USE_LLGS_FOR_LOCAL_DEBUGGING)
+    return false;
+#else
     return ProcessPOSIX::CanDebug(target, plugin_specified_by_name);
+#endif
 }
 

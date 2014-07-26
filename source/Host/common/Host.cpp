@@ -44,6 +44,7 @@
 
 #if defined (__linux__) || defined (__FreeBSD__) || defined (__FreeBSD_kernel__) || defined (__APPLE__) || defined(__NetBSD__)
 #include <spawn.h>
+#include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/syscall.h>
 #endif
@@ -92,6 +93,107 @@ extern "C"
 
 using namespace lldb;
 using namespace lldb_private;
+
+namespace
+{
+    // Support for launching in a suspended state, ready to ptrace, at the beginning of the program.
+#if defined (__APPLE__) || defined (__linux__) || defined (__FreeBSD__) || defined (__GLIBC__) || defined(__NetBSD__)
+    typedef int	(*SpawnFunction) (
+        ::pid_t *pid,
+        const char *path,
+        const posix_spawn_file_actions_t *file_actions,
+        const posix_spawnattr_t *attrp,
+        char *const argv[],
+        char *const envp[]);
+
+    int
+    SpawnForkPtraceMe (
+        ::pid_t *pid,
+        const char *path,
+        const posix_spawn_file_actions_t *file_actions,
+        const posix_spawnattr_t *attrp,
+        char *const argv[],
+        char *const envp[])
+    {
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+
+        // We'll use a fork/exec style here.  First we'll fork, then have the parent return
+        // success.  The child will set itself up to exec, and will do a PTRACE_TRACEME call
+        // right before it execs.
+        if (log)
+            log->Printf ("%s: calling fork()", __FUNCTION__);
+
+        const ::pid_t fork_pid = fork ();
+        if (fork_pid == -1)
+        {
+            const int error_value = errno;
+            if (log)
+                log->Printf ("%s: fork() call failed: %s", __FUNCTION__, strerror (error_value));
+            return error_value;
+        }
+
+        if (fork_pid != 0)
+        {
+            if (log)
+                log->Printf ("%s: fork() call - parent returning after successful fork, child pid %" PRIu64, __FUNCTION__, static_cast<lldb::pid_t> (fork_pid));
+
+            // parent.
+            *pid = fork_pid;
+            return 0;
+        }
+
+        // We're the child.
+        if (log)
+            log->Printf ("%s: child pid %" PRIu64 " about to call ptrace", __FUNCTION__, static_cast<lldb::pid_t> (getpid()));
+
+        // This is the child.  Wait now for something to PTRACE us.
+#if defined (__linux__)
+        const long ptrace_result = ptrace (PTRACE_TRACEME, 0, nullptr, nullptr);
+        if (ptrace_result == -1)
+        {
+            const int ptrace_errno = errno;
+            if (log)
+                log->Printf ("%s: child pid %" PRIu64 " ptrace(PTRACE_TRACEME,...) failed: %s", __FUNCTION__, static_cast<lldb::pid_t> (getpid()), strerror (ptrace_errno));
+        }
+#elif defined (__APPLE__) || defined (__FreeBSD__) || defined (__GLIBC__) || defined(__NetBSD__)
+        ptrace (PT_TRACE_ME, 0, nullptr, 0);
+#else
+        // Not sure how to call ptrace here - we're just going to end up execing without waiting.
+        if (log)
+            log->Printf ("%s: platform missing an equivalent to ptrace(PTRACE_TRACEME/PT_TRACE_ME), new process will not wait");
+#endif
+
+        // And now exec.
+        // FIXME address the file_actions and attrp options.
+        const int exec_result = execve (path, argv, envp);
+
+        if (exec_result != 0)
+        {
+            const int exec_errno = errno;
+            if (log)
+                log->Printf ("%s: forked pid %" PRIu64 " failed to execve() with path '%s': %s\n", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), path ? path : "<null> path", strerror (exec_errno));
+        }
+        exit (-1);
+    }
+
+    SpawnFunction
+    GetPosixspawnFunction (ProcessLaunchInfo &launch_info)
+    {
+#if defined (__APPLE__)
+        return ::posix_spawnp;
+#else
+        if (launch_info.GetFlags().Test (eLaunchFlagDebug))
+        {
+            // We want to start the exe in a suspended state at the program execution
+            // start point.
+            return SpawnForkPtraceMe;
+        }
+
+        return ::posix_spawnp;
+#endif
+    }
+#endif
+}
 
 // Define maximum thread name length
 #if defined (__linux__) || defined (__FreeBSD__) || defined (__FreeBSD_kernel__) || defined (__NetBSD__)
@@ -1810,6 +1912,7 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
 #endif
 
     short flags = GetPosixspawnFlags(launch_info);
+    SpawnFunction spawn_function_p = GetPosixspawnFunction (launch_info);
 
     error.SetError( ::posix_spawnattr_setflags (&attr, flags), eErrorTypePOSIX);
     if (error.Fail() || log)
@@ -1928,7 +2031,7 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
             }
         }
 
-        error.SetError (::posix_spawnp (&pid,
+        error.SetError ((*spawn_function_p) (&pid,
                                         exe_path,
                                         &file_actions,
                                         &attr,
@@ -1953,7 +2056,7 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
     }
     else
     {
-        error.SetError (::posix_spawnp (&pid,
+        error.SetError ((*spawn_function_p) (&pid,
                                         exe_path,
                                         NULL,
                                         &attr,
