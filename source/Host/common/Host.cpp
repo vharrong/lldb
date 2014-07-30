@@ -49,6 +49,11 @@
 #include <sys/syscall.h>
 #endif
 
+#if defined (__linux__)
+#include <sys/prctl.h>
+#include <linux/prctl.h>
+#endif
+
 #if defined (__FreeBSD__)
 #include <pthread_np.h>
 #endif
@@ -155,6 +160,33 @@ namespace
             const int ptrace_errno = errno;
             if (log)
                 log->Printf ("%s: child pid %" PRIu64 " ptrace(PTRACE_TRACEME,...) failed: %s", __FUNCTION__, static_cast<lldb::pid_t> (getpid()), strerror (ptrace_errno));
+        }
+        else
+        {
+#if defined (PR_SET_PTRACER)
+            // Attempt to set the permitted ptracer to our parent process (lldb, which we just
+            // forked off of) so that llgs, which will be a sibling, can ptrace us later.
+            const ::pid_t parent_pid = getppid();
+            const int prctl_result = prctl (PR_SET_PTRACER, static_cast<unsigned long>(parent_pid), 0, 0, 0);
+            if (prctl_result != 0)
+            {
+                Error error;
+                error.SetErrorToErrno();
+                if (log)
+                    log->Printf ("%s: prctl (PR_SET_PTRACER,%" PRIu64 ",...) FAILED (ignored): %s", __FUNCTION__, static_cast<uint64_t> (parent_pid), error.AsCString ());
+                // Don't bail here in case we're calling it on a system combo that doesn't need this.
+                // Ubuntu 10.10+ claims it needs it, even though the standard way to check for it in
+                // procfs is showing 0 (i.e. disabled) on stock systems.
+            }
+            else
+            {
+                if (log)
+                    log->Printf ("%s: prctl (PR_SET_PTRACER,%" PRIu64 ",...) SUCCESS", __FUNCTION__, static_cast<uint64_t> (parent_pid));
+            }
+#else
+            if (log)
+                log->Printf ("%s: prctl (PR_SET_PTRACER,...) skipped because PR_SET_PTRACER is not defined", __FUNCTION__);
+#endif
         }
 #elif defined (__APPLE__) || defined (__FreeBSD__) || defined (__GLIBC__) || defined(__NetBSD__)
         ptrace (PT_TRACE_ME, 0, nullptr, 0);
