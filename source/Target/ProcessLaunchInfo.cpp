@@ -65,7 +65,8 @@ ProcessLaunchInfo::ProcessLaunchInfo () :
     m_monitor_callback (NULL),
     m_monitor_callback_baton (NULL),
     m_monitor_signals (false),
-    m_hijack_listener_sp ()
+    m_hijack_listener_sp (),
+    m_launch_sync_pipe_sp ()
 {
 }
 
@@ -86,7 +87,8 @@ ProcessLaunchInfo::ProcessLaunchInfo (
     m_monitor_callback (NULL),
     m_monitor_callback_baton (NULL),
     m_monitor_signals (false),
-    m_hijack_listener_sp ()
+    m_hijack_listener_sp (),
+    m_launch_sync_pipe_sp ()
 {
     if (stdin_path)
     {

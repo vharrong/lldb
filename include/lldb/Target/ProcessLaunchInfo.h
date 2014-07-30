@@ -16,6 +16,7 @@
 // LLDB Headers
 #include "lldb/Core/Flags.h"
 #include "lldb/Host/Host.h"
+#include "lldb/lldb-private-forward.h"
 #include "lldb/Target/ProcessInfo.h"
 #include "lldb/Utility/PseudoTerminal.h"
 
@@ -266,6 +267,13 @@ namespace lldb_private
             return m_flags.Test(lldb::eLaunchFlagDetachOnError);
         }
 
+        /// This pipe is used to synchronize startup of the lldb-launched inferior at the appropriate time for llgs when using the launch-for-debug mode.
+        PipeSP&
+        GetLaunchSyncPipe ()
+        {
+            return m_launch_sync_pipe_sp;
+        }
+
     protected:
         std::string m_working_dir;
         std::string m_plugin_name;
@@ -279,6 +287,7 @@ namespace lldb_private
         bool m_monitor_signals;
         std::string m_event_data; // A string passed to the plugin launch, having no meaning to the upper levels of lldb.
         lldb::ListenerSP m_hijack_listener_sp;
+        PipeSP m_launch_sync_pipe_sp;
     };
 }
 

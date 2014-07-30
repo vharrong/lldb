@@ -74,6 +74,8 @@
 #include "lldb/Host/Endian.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/Mutex.h"
+#include "lldb/Host/Pipe.h"
+#include "lldb/lldb-private-forward.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/TargetList.h"
 #include "lldb/Utility/CleanUp.h"
@@ -110,22 +112,36 @@ namespace
         const posix_spawn_file_actions_t *file_actions,
         const posix_spawnattr_t *attrp,
         char *const argv[],
-        char *const envp[]);
+        char *const envp[],
+        PipeSP &sync_pipe_sp);
 
     int
-    SpawnForkPtraceMe (
+    SpawnForkPipeSync (
         ::pid_t *pid,
         const char *path,
         const posix_spawn_file_actions_t *file_actions,
         const posix_spawnattr_t *attrp,
         char *const argv[],
-        char *const envp[])
+        char *const envp[],
+        PipeSP &sync_pipe_sp)
     {
         Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+        Error error;
 
         // We'll use a fork/exec style here.  First we'll fork, then have the parent return
-        // success.  The child will set itself up to exec, and will do a PTRACE_TRACEME call
-        // right before it execs.
+        // success.  The child will set itself up to exec, and will do a read on the sync_pipe_sp right
+        // before it execs.  It will block reading one character before it execs.
+
+        assert (!sync_pipe_sp && "pipe was already created");
+
+        sync_pipe_sp.reset (new Pipe ());
+        if (! sync_pipe_sp->Open ())
+        {
+            if (log)
+                log->Printf ("%s: failed to open pipe for launch synchronization", __FUNCTION__);
+            return -1;
+        }
+
         if (log)
             log->Printf ("%s: calling fork()", __FUNCTION__);
 
@@ -140,10 +156,18 @@ namespace
 
         if (fork_pid != 0)
         {
+            // Parent.
             if (log)
                 log->Printf ("%s: fork() call - parent returning after successful fork, child pid %" PRIu64, __FUNCTION__, static_cast<lldb::pid_t> (fork_pid));
 
-            // parent.
+            // Close the read side of the pipe.
+            if (!sync_pipe_sp->CloseReadFileDescriptor())
+            {
+                if (log)
+                    log->Printf ("%s: failed to close the read side of the launch sync pipe in parent", __FUNCTION__);
+                // Don't fail the launch because of this.
+            }
+
             *pid = fork_pid;
             return 0;
         }
@@ -152,52 +176,71 @@ namespace
         if (log)
             log->Printf ("%s: child pid %" PRIu64 " about to call ptrace", __FUNCTION__, static_cast<lldb::pid_t> (getpid()));
 
-        // This is the child.  Wait now for something to PTRACE us.
-#if defined (__linux__)
-        const long ptrace_result = ptrace (PTRACE_TRACEME, 0, nullptr, nullptr);
-        if (ptrace_result == -1)
+        // Close the write side of the launch sync pipe.
+        if (!sync_pipe_sp->CloseWriteFileDescriptor())
         {
-            const int ptrace_errno = errno;
             if (log)
-                log->Printf ("%s: child pid %" PRIu64 " ptrace(PTRACE_TRACEME,...) failed: %s", __FUNCTION__, static_cast<lldb::pid_t> (getpid()), strerror (ptrace_errno));
+                log->Printf ("%s: failed to close the write side of the launch sync pipe in the child", __FUNCTION__);
+            // Don't fail the launch because of this.
+        }
+
+        // FIXME set up the launch environment here.
+
+        // For some more recent Linux kernels and distributions,
+        // we need to enable a process other than the parent -- i.e.
+        // llgs is not the parent of this launched inferior, but a
+        // sibling -- to ptrace via a prctl mechanism.
+#if defined (__linux__)
+#if defined (PR_SET_PTRACER)
+        // Attempt to set the permitted ptracer to our parent process (lldb, which we just
+        // forked off of) so that llgs, which will be a sibling, can ptrace us later.
+        const ::pid_t parent_pid = getppid();
+        const int prctl_result = prctl (PR_SET_PTRACER, static_cast<unsigned long>(parent_pid), 0, 0, 0);
+        if (prctl_result != 0)
+        {
+            error.SetErrorToErrno();
+            if (log)
+                log->Printf ("%s: prctl (PR_SET_PTRACER,%" PRIu64 ",...) FAILED (ignored): %s", __FUNCTION__, static_cast<uint64_t> (parent_pid), error.AsCString ());
+            // Don't bail here in case we're calling it on a system combo that doesn't need this.
+            // Ubuntu 10.10+ claims it needs it, even though the standard way to check for it in
+            // procfs is showing 0 (i.e. disabled) on stock systems.
         }
         else
         {
-#if defined (PR_SET_PTRACER)
-            // Attempt to set the permitted ptracer to our parent process (lldb, which we just
-            // forked off of) so that llgs, which will be a sibling, can ptrace us later.
-            const ::pid_t parent_pid = getppid();
-            const int prctl_result = prctl (PR_SET_PTRACER, static_cast<unsigned long>(parent_pid), 0, 0, 0);
-            if (prctl_result != 0)
-            {
-                Error error;
-                error.SetErrorToErrno();
-                if (log)
-                    log->Printf ("%s: prctl (PR_SET_PTRACER,%" PRIu64 ",...) FAILED (ignored): %s", __FUNCTION__, static_cast<uint64_t> (parent_pid), error.AsCString ());
-                // Don't bail here in case we're calling it on a system combo that doesn't need this.
-                // Ubuntu 10.10+ claims it needs it, even though the standard way to check for it in
-                // procfs is showing 0 (i.e. disabled) on stock systems.
-            }
-            else
-            {
-                if (log)
-                    log->Printf ("%s: prctl (PR_SET_PTRACER,%" PRIu64 ",...) SUCCESS", __FUNCTION__, static_cast<uint64_t> (parent_pid));
-            }
-#else
             if (log)
-                log->Printf ("%s: prctl (PR_SET_PTRACER,...) skipped because PR_SET_PTRACER is not defined", __FUNCTION__);
-#endif
+                log->Printf ("%s: prctl (PR_SET_PTRACER,%" PRIu64 ",...) SUCCESS", __FUNCTION__, static_cast<uint64_t> (parent_pid));
         }
-#elif defined (__APPLE__) || defined (__FreeBSD__) || defined (__GLIBC__) || defined(__NetBSD__)
-        ptrace (PT_TRACE_ME, 0, nullptr, 0);
 #else
-        // Not sure how to call ptrace here - we're just going to end up execing without waiting.
         if (log)
-            log->Printf ("%s: platform missing an equivalent to ptrace(PTRACE_TRACEME/PT_TRACE_ME), new process will not wait");
-#endif
+            log->Printf ("%s: prctl (PR_SET_PTRACER,...) skipped because PR_SET_PTRACER is not defined", __FUNCTION__);
+#endif // #if defined (PR_SET_PTRACER)
+#endif // #if defined (__linux__)
+
+        // Now wait for a read of 1 byte on the launch sync pipe.
+        // Our parent (lldb) will send a byte here once we've been
+        // successfully attached to by the local llgs.  We need
+        // this synchronization to enable the launched inferior to
+        // be debugged from the start of the program.
+        // This is the child.  Wait now for something to PTRACE us.
+        uint8_t sync_byte;
+        if (!sync_pipe_sp->Read (&sync_byte, 1))
+        {
+            error.SetErrorToErrno();
+            if (log)
+                log->Printf ("%s: failed to read byte from launch sync pipe: %s", __FUNCTION__, error.AsCString ());
+            exit (-1);
+        }
+
+        // Close the read side of the pipe.
+        if (!sync_pipe_sp->CloseReadFileDescriptor())
+        {
+            error.SetErrorToErrno();
+            if (log)
+                log->Printf ("%s: failed to close the read side of the launch sync pipe in child after launch synchronizing: %s", __FUNCTION__, error.AsCString ());
+            // Don't fail the launch because of this.
+        }
 
         // And now exec.
-        // FIXME address the file_actions and attrp options.
         const int exec_result = execve (path, argv, envp);
 
         if (exec_result != 0)
@@ -209,20 +252,34 @@ namespace
         exit (-1);
     }
 
+    int
+    SpawnPosixSpawnp (
+                       ::pid_t *pid,
+                       const char *path,
+                       const posix_spawn_file_actions_t *file_actions,
+                       const posix_spawnattr_t *attrp,
+                       char *const argv[],
+                       char *const envp[],
+                       PipeSP & /*sync_pipe_sp*/)
+    {
+        // Just call ::posix_spawnp and ignore the sync_pipe.
+        return ::posix_spawnp (pid, path, file_actions, attrp, argv, envp);
+    }
+
     SpawnFunction
     GetPosixspawnFunction (ProcessLaunchInfo &launch_info)
     {
 #if defined (__APPLE__)
-        return ::posix_spawnp;
+        return SpawnPosixSpawnp;
 #else
         if (launch_info.GetFlags().Test (eLaunchFlagDebug))
         {
             // We want to start the exe in a suspended state at the program execution
             // start point.
-            return SpawnForkPtraceMe;
+            return SpawnForkPipeSync;
         }
 
-        return ::posix_spawnp;
+        return SpawnPosixSpawnp;
 #endif
     }
 #endif
@@ -2097,7 +2154,8 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
                                         &file_actions,
                                         &attr,
                                         argv,
-                                        envp),
+                                        envp,
+                                        launch_info.GetLaunchSyncPipe ()),
                         eErrorTypePOSIX);
 
         if (error.Fail() || log)
@@ -2122,7 +2180,8 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
                                         NULL,
                                         &attr,
                                         argv,
-                                        envp),
+                                        envp,
+                                        launch_info.GetLaunchSyncPipe()),
                         eErrorTypePOSIX);
 
         if (error.Fail() || log)
