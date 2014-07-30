@@ -1086,6 +1086,10 @@ Platform::DebugProcess (ProcessLaunchInfo &launch_info,
         if (log)
             log->Printf ("Platform::%s LaunchProcess() failed: %s", __FUNCTION__, error.AsCString ());
     }
+
+    // Ensure the launch sync pipe is cleared out.
+    launch_info.GetLaunchSyncPipe().reset ();
+
     return process_sp;
 }
 

@@ -1151,6 +1151,7 @@ ProcessGDBRemote::DoAttachToProcessWithID (lldb::pid_t attach_pid, const Process
             m_async_broadcaster.BroadcastEvent (eBroadcastBitAsyncContinue, new EventDataBytes (packet, packet_len));
         }
     }
+
     return error;
 }
 
@@ -3062,7 +3063,7 @@ ProcessGDBRemote::AsyncThread (void *arg)
                                         else
                                         {
                                             if (log)
-                                                log->Printf ("ProcessGDBRemote::%s launch sync pipe not used during vAttach handling");
+                                                log->Printf ("ProcessGDBRemote::%s launch sync pipe not used during vAttach handling", __FUNCTION__);
                                         }
                                     }
 

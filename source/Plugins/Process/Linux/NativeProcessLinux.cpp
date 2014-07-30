@@ -1861,19 +1861,31 @@ NativeProcessLinux::MonitorCallback(void *callback_baton,
         if (ptrace_err == EINVAL)
         {
             // This is the first part of the Linux ptrace group-stop mechanism.
+            // (The other thing it can conceivably be is a call on a pid that no
+            // longer exists for some reason).
             // The tracer (i.e. NativeProcessLinux) is expected to inject the signal
             // into the tracee (i.e. inferior) at this point.
             if (log)
-                log->Printf ("NativeProcessLinux::%s() resuming from group-stop", __FUNCTION__);
+                log->Printf ("NativeProcessLinux::%s resuming from group-stop", __FUNCTION__);
 
             // The inferior process is in 'group-stop', so deliver the stopping signal.
             const bool signal_delivered = process->Resume (pid, info.si_signo);
             if (log)
-                log->Printf ("NativeProcessLinux::%s() pid %" PRIu64 " group-stop signal delivery of signal 0x%x (%s) - %s", __FUNCTION__, pid, info.si_signo, GetUnixSignals ().GetSignalAsCString (info.si_signo), signal_delivered ? "success" : "failed");
+                log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " group-stop signal delivery of signal 0x%x (%s) - %s", __FUNCTION__, pid, info.si_signo, GetUnixSignals ().GetSignalAsCString (info.si_signo), signal_delivered ? "success" : "failed");
 
-            assert(signal_delivered && "SIGSTOP delivery failed while in 'group-stop' state");
+            if (signal_delivered)
+            {
+                // All is well.
+                stop_monitoring = false;
+            }
+            else
+            {
+                if (log)
+                    log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " something looks horribly wrong - like the process we're monitoring died.  Stop monitoring it.", __FUNCTION__, pid);
 
-            stop_monitoring = false;
+                // Stop monitoring now.
+                return true;
+            }
         }
         else
         {
