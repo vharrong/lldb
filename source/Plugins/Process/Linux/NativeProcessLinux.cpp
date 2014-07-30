@@ -1987,10 +1987,60 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
     }
 
     case (SIGTRAP | (PTRACE_EVENT_EXEC << 8)):
+    {
+        NativeThreadProtocolSP main_thread_sp;
+
         if (log)
             log->Printf ("NativeProcessLinux::%s() received exec event, code = %d", __FUNCTION__, info->si_code ^ SIGTRAP);
-        // FIXME stop all threads, mark thread stop reason as ThreadStopInfo.reason = eStopReasonExec;
+
+        // Remove all but the main thread here.
+        // FIXME check if we really need to do this - how does ptrace behave under exec when multiple threads were present
+        // before the exec?  If we get all the detach signals right, we don't need to do this.  However, it makes it clearer
+        // what we should really be tracking.
+        {
+            Mutex::Locker locker (m_threads_mutex);
+
+            if (log)
+                log->Printf ("NativeProcessLinux::%s exec received, stop tracking all but main thread", __FUNCTION__);
+
+            for (auto thread_sp : m_threads)
+            {
+                const bool is_main_thread = thread_sp && thread_sp->GetID () == GetID ();
+                if (is_main_thread)
+                {
+                    main_thread_sp = thread_sp;
+                    if (log)
+                        log->Printf ("NativeProcessLinux::%s found main thread with tid %" PRIu64 ", keeping", __FUNCTION__, main_thread_sp->GetID ());
+                }
+                else
+                {
+                    if (log)
+                        log->Printf ("NativeProcessLinux::%s discarding non-main-thread tid %" PRIu64 " due to exec", __FUNCTION__, thread_sp->GetID ());
+                }
+            }
+
+            m_threads.clear ();
+
+            if (main_thread_sp)
+            {
+                m_threads.push_back (main_thread_sp);
+                SetCurrentThreadID (main_thread_sp->GetID ());
+                reinterpret_cast<NativeThreadLinux*>(main_thread_sp.get())->SetStoppedByExec ();
+            }
+            else
+            {
+                SetCurrentThreadID (LLDB_INVALID_THREAD_ID);
+                if (log)
+                    log->Printf ("NativeProcessLinux::%s pid %" PRIu64 "no main thread found, discarded all threads, we're in a no-thread state!", __FUNCTION__, GetID ());
+            }
+        }
+
+        // If we have a main thread, indicate we are stopped.
+        assert (main_thread_sp && "exec called during ptraced process but no main thread metadata tracked");
+        SetState (StateType::eStateStopped);
+
         break;
+    }
 
     case (SIGTRAP | (PTRACE_EVENT_EXIT << 8)):
     {
