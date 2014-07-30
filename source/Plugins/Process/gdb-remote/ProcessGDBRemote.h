@@ -25,6 +25,7 @@
 #include "lldb/Core/StringList.h"
 #include "lldb/Core/StructuredData.h"
 #include "lldb/Core/ThreadSafeValue.h"
+#include "lldb/lldb-private-forward.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Thread.h"
 
@@ -361,7 +362,7 @@ protected:
     lldb::CommandObjectSP m_command_sp;
     int64_t m_breakpoint_pc_offset;
     std::shared_ptr<lldb_private::UnixSignals> m_unix_signals_sp;
-
+    lldb_private::PipeSP m_launch_sync_pipe_sp;
 
     bool
     StartAsyncThread ();

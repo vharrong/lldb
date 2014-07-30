@@ -274,6 +274,12 @@ namespace lldb_private
             return m_launch_sync_pipe_sp;
         }
 
+        const PipeSP&
+        GetLaunchSyncPipe () const
+        {
+            return m_launch_sync_pipe_sp;
+        }
+
     protected:
         std::string m_working_dir;
         std::string m_plugin_name;

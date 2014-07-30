@@ -228,7 +228,8 @@ public:
         m_wait_for_launch (false),
         m_ignore_existing (true),
         m_continue_once_attached (false),
-        m_detach_on_error (true)
+        m_detach_on_error (true),
+        m_launch_sync_pipe_sp ()
     {
     }
 
@@ -239,7 +240,8 @@ public:
         m_wait_for_launch (false),
         m_ignore_existing (true),
         m_continue_once_attached (false),
-        m_detach_on_error(true)
+        m_detach_on_error(true),
+        m_launch_sync_pipe_sp (launch_info.GetLaunchSyncPipe ())
     {
         ProcessInfo::operator= (launch_info);
         SetProcessPluginName (launch_info.GetProcessPluginName());
@@ -359,7 +361,19 @@ public:
     {
         m_detach_on_error = enable;
     }
-    
+
+    PipeSP &
+    GetLaunchSyncPipe ()
+    {
+        return m_launch_sync_pipe_sp;
+    }
+
+    const PipeSP &
+    GetLaunchSyncPipe () const
+    {
+        return m_launch_sync_pipe_sp;
+    }
+
 protected:
     lldb::ListenerSP m_hijack_listener_sp;
     std::string m_plugin_name;
@@ -368,6 +382,7 @@ protected:
     bool m_ignore_existing;
     bool m_continue_once_attached; // Supports the use-case scenario of immediately continuing the process once attached.
     bool m_detach_on_error;  // If we are debugging remotely, instruct the stub to detach rather than killing the target on error.
+    PipeSP m_launch_sync_pipe_sp;
 };
 
 class ProcessLaunchCommandOptions : public Options
