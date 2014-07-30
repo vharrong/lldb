@@ -1102,7 +1102,12 @@ ProcessGDBRemote::DoAttachToProcessWithID (lldb::pid_t attach_pid)
 Error
 ProcessGDBRemote::DoAttachToProcessWithID (lldb::pid_t attach_pid, const ProcessAttachInfo &attach_info)
 {
+    Log *log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
     Error error;
+
+    if (log)
+        log->Printf ("ProcessGDBRemote::%s()", __FUNCTION__);
+
     // Clear out and clean up from any current state
     Clear();
     if (attach_pid != LLDB_INVALID_PROCESS_ID)
@@ -1129,6 +1134,16 @@ ProcessGDBRemote::DoAttachToProcessWithID (lldb::pid_t attach_pid, const Process
             // Keep track of the launch sync pipe - for launched processes that need it, we send it a byte
             // once we're attached successfully.
             m_launch_sync_pipe_sp = attach_info.GetLaunchSyncPipe();
+            if (m_launch_sync_pipe_sp)
+            {
+                if (log)
+                    log->Printf ("ProcessGDBRemote::%s launch sync pipe provided", __FUNCTION__);
+            }
+            else
+            {
+                if (log)
+                    log->Printf ("ProcessGDBRemote::%s launch sync pipe not used", __FUNCTION__);
+            }
 
             char packet[64];
             const int packet_len = ::snprintf (packet, sizeof(packet), "vAttach;%" PRIx64, attach_pid);
@@ -3007,31 +3022,48 @@ ProcessGDBRemote::AsyncThread (void *arg)
                                     StringExtractorGDBRemote response;
                                     StateType stop_state = process->GetGDBRemote().SendContinuePacketAndWaitForResponse (process, continue_cstr, continue_cstr_len, response);
 
-                                    if (is_vAttach && process->m_launch_sync_pipe_sp)
+                                    if (is_vAttach)
                                     {
-                                        // If this process launch info has a launch sync pipe, we need to write a byte to it here
-                                        // so that the process execs the inferior.
-                                        const uint8_t launch_sync_byte = static_cast<uint8_t> (stop_state);
-                                        if (process->m_launch_sync_pipe_sp->Write (&launch_sync_byte, 1) != 1)
+                                        if (process->m_launch_sync_pipe_sp)
                                         {
                                             if (log)
-                                                log->Printf ("ProcessGDBRemote::%s failed to write launch sync byte to pipe", __FUNCTION__);
+                                                log->Printf ("ProcessGDBRemote::%s launch sync pipe about to write", __FUNCTION__);
+                                            // If this process launch info has a launch sync pipe, we need to write a byte to it here
+                                            // so that the process execs the inferior.
+                                            const uint8_t launch_sync_byte = static_cast<uint8_t> (stop_state);
+                                            if (process->m_launch_sync_pipe_sp->Write (&launch_sync_byte, 1) != 1)
+                                            {
+                                                if (log)
+                                                    log->Printf ("ProcessGDBRemote::%s launch sync pipe write sync byte FAILED", __FUNCTION__);
+                                            }
+                                            else
+                                            {
+                                                if (log)
+                                                    log->Printf ("ProcessGDBRemote::%s launch sync pipe byte write sync byte SUCCESS", __FUNCTION__);
+                                            }
+
+                                            // Close the pipe.
+                                            if (!process->m_launch_sync_pipe_sp->CloseWriteFileDescriptor ())
+                                            {
+                                                Error error;
+                                                error.SetErrorToErrno ();
+                                                if (log)
+                                                    log->Printf ("ProcessGDBRemote::%s launch sync pipe close after write FAILED: %s", __FUNCTION__, error.AsCString ());
+                                            }
+                                            else
+                                            {
+                                                if (log)
+                                                    log->Printf ("ProcessGDBRemote::%s launch sync pipe close after write SUCCESS", __FUNCTION__);
+                                            }
+
+                                            // Delete the pipe so we don't keep trying to use it.
+                                            process->m_launch_sync_pipe_sp.reset ();
                                         }
                                         else
                                         {
                                             if (log)
-                                                log->Printf ("ProcessGDBRemote::%s wrote launch sync byte to pipe", __FUNCTION__);
+                                                log->Printf ("ProcessGDBRemote::%s launch sync pipe not used during vAttach handling");
                                         }
-
-                                        // Close the pipe.
-                                        if (!process->m_launch_sync_pipe_sp->CloseWriteFileDescriptor ())
-                                        {
-                                            if (log)
-                                                log->Printf ("ProcessGDBRemote::%s failed to close write side of launch sync pipe", __FUNCTION__);
-                                        }
-
-                                        // Delete the pipe so we don't keep trying to use it.
-                                        process->m_launch_sync_pipe_sp.reset ();
                                     }
 
                                     // We need to immediately clear the thread ID list so we are sure to get a valid list of threads.

@@ -137,9 +137,15 @@ namespace
         sync_pipe_sp.reset (new Pipe ());
         if (! sync_pipe_sp->Open ())
         {
+            error.SetErrorToErrno();
             if (log)
-                log->Printf ("%s: failed to open pipe for launch synchronization", __FUNCTION__);
+                log->Printf ("%s: launch sync pipe open FAILED: %s", __FUNCTION__, error.AsCString ());
             return -1;
+        }
+        else
+        {
+            if (log)
+                log->Printf ("%s: launch sync pipe open SUCCESS", __FUNCTION__);
         }
 
         if (log)
@@ -161,11 +167,17 @@ namespace
                 log->Printf ("%s: fork() call - parent returning after successful fork, child pid %" PRIu64, __FUNCTION__, static_cast<lldb::pid_t> (fork_pid));
 
             // Close the read side of the pipe.
-            if (!sync_pipe_sp->CloseReadFileDescriptor())
+            if (!sync_pipe_sp->CloseReadFileDescriptor ())
+            {
+                error.SetErrorToErrno ();
+                if (log)
+                    log->Printf ("%s: launch sync pipe close the read side in parent FAILED: %s", __FUNCTION__, error.AsCString ());
+                // Don't fail the launch because of this.
+            }
+            else
             {
                 if (log)
-                    log->Printf ("%s: failed to close the read side of the launch sync pipe in parent", __FUNCTION__);
-                // Don't fail the launch because of this.
+                    log->Printf ("%s: launch sync pipe close the read side in parent SUCCESS", __FUNCTION__);
             }
 
             *pid = fork_pid;
@@ -174,14 +186,20 @@ namespace
 
         // We're the child.
         if (log)
-            log->Printf ("%s: child pid %" PRIu64 " about to call ptrace", __FUNCTION__, static_cast<lldb::pid_t> (getpid()));
+            log->Printf ("%s: child pid %" PRIu64 " initiating synchronized exec process", __FUNCTION__, static_cast<lldb::pid_t> (getpid()));
 
         // Close the write side of the launch sync pipe.
-        if (!sync_pipe_sp->CloseWriteFileDescriptor())
+        if (!sync_pipe_sp->CloseWriteFileDescriptor ())
+        {
+            error.SetErrorToErrno ();
+            if (log)
+                log->Printf ("%s: launch sync pipe child close write side FAILED: %s", __FUNCTION__, error.AsCString ());
+            // Don't fail the launch because of this.
+        }
+        else
         {
             if (log)
-                log->Printf ("%s: failed to close the write side of the launch sync pipe in the child", __FUNCTION__);
-            // Don't fail the launch because of this.
+                log->Printf ("%s: launch sync pipe child close write side SUCCESS", __FUNCTION__);
         }
 
         // FIXME set up the launch environment here.
@@ -227,8 +245,13 @@ namespace
         {
             error.SetErrorToErrno();
             if (log)
-                log->Printf ("%s: failed to read byte from launch sync pipe: %s", __FUNCTION__, error.AsCString ());
+                log->Printf ("%s: launch sync pipe read byte FAILED, canceling launch: %s", __FUNCTION__, error.AsCString ());
             exit (-1);
+        }
+        else
+        {
+            if (log)
+                log->Printf ("%s: launch sync pipe read byte SUCCESS", __FUNCTION__);
         }
 
         // Close the read side of the pipe.
@@ -236,11 +259,31 @@ namespace
         {
             error.SetErrorToErrno();
             if (log)
-                log->Printf ("%s: failed to close the read side of the launch sync pipe in child after launch synchronizing: %s", __FUNCTION__, error.AsCString ());
+                log->Printf ("%s: launch sync pipe child close read side after sync FAILED: %s", __FUNCTION__, error.AsCString ());
             // Don't fail the launch because of this.
+        }
+        else
+        {
+            if (log)
+                log->Printf ("%s: launch sync pipe child close read side after sync SUCCESS", __FUNCTION__);
         }
 
         // And now exec.
+        if (log)
+        {
+            log->Printf ("%s: calling execve('%s', argv, envp), argv/envp follows", __FUNCTION__, path ? path : "<null>");
+            if (argv)
+            {
+                for (int i = 0; argv[i] != nullptr; ++i)
+                    log->Printf ("-- argv[%d]: %s", i, argv[i]);
+            }
+            if (envp)
+            {
+                for (int i = 0; envp[i] != nullptr; ++i)
+                    log->Printf ("-- envp[%d]: %s", i, envp[i]);
+            }
+        }
+
         const int exec_result = execve (path, argv, envp);
 
         if (exec_result != 0)
