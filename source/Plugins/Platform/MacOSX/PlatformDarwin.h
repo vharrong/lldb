@@ -64,9 +64,6 @@ public:
     FindProcesses (const lldb_private::ProcessInstanceInfoMatch &match_info,
                    lldb_private::ProcessInstanceInfoList &process_infos);
     
-    virtual lldb_private::Error
-    LaunchProcess (lldb_private::ProcessLaunchInfo &launch_info);
-
     virtual lldb::ProcessSP
     Attach (lldb_private::ProcessAttachInfo &attach_info,
             lldb_private::Debugger &debugger,

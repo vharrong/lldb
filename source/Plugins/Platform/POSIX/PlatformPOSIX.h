@@ -127,6 +127,9 @@ public:
     virtual lldb_private::Error
     Unlink (const char *path);
 
+    lldb_private::Error
+    LaunchProcess (lldb_private::ProcessLaunchInfo &launch_info) override;
+
     lldb::ProcessSP
     DebugProcess (lldb_private::ProcessLaunchInfo &launch_info,
                   lldb_private::Debugger &debugger,

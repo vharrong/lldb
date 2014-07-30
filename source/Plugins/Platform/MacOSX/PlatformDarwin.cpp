@@ -625,25 +625,6 @@ PlatformDarwin::FindProcesses (const ProcessInstanceInfoMatch &match_info,
     return match_count;    
 }
 
-Error
-PlatformDarwin::LaunchProcess (ProcessLaunchInfo &launch_info)
-{
-    Error error;
-    
-    if (IsHost())
-    {
-        error = Platform::LaunchProcess (launch_info);
-    }
-    else
-    {
-        if (m_remote_platform_sp)
-            error = m_remote_platform_sp->LaunchProcess (launch_info);
-        else
-            error.SetErrorString ("the platform is not currently connected");
-    }
-    return error;
-}
-
 lldb::ProcessSP
 PlatformDarwin::Attach (ProcessAttachInfo &attach_info,
                         Debugger &debugger,

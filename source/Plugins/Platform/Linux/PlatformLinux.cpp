@@ -452,50 +452,6 @@ PlatformLinux::GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info)
     return resume_count;
 }
 
-Error
-PlatformLinux::LaunchProcess (ProcessLaunchInfo &launch_info)
-{
-    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PLATFORM));
-    Error error;
-    
-    if (IsHost())
-    {
-        if (log)
-            log->Printf ("PlatformLinux::%s() launching process as host", __FUNCTION__);
-
-        if (launch_info.GetFlags().Test (eLaunchFlagLaunchInShell))
-        {
-            const bool is_localhost = true;
-            const bool will_debug = launch_info.GetFlags().Test(eLaunchFlagDebug);
-            const bool first_arg_is_full_shell_command = false;
-            uint32_t num_resumes = GetResumeCountForLaunchInfo (launch_info);
-            if (!launch_info.ConvertArgumentsForLaunchingInShell (error,
-                                                                  is_localhost,
-                                                                  will_debug,
-                                                                  first_arg_is_full_shell_command,
-                                                                  num_resumes))
-                return error;
-        }
-        error = Platform::LaunchProcess (launch_info);
-    }
-    else
-    {
-        if (m_remote_platform_sp)
-        {
-            if (log)
-                log->Printf ("PlatformLinux::%s() attempting to launch remote process", __FUNCTION__);
-            error = m_remote_platform_sp->LaunchProcess (launch_info);
-        }
-        else
-        {
-            if (log)
-                log->Printf ("PlatformLinux::%s() attempted to launch process but is not the host and no remote platform set", __FUNCTION__);
-            error.SetErrorString ("the platform is not currently connected");
-        }
-    }
-    return error;
-}
-
 // Linux processes can not be launched by spawning and attaching.
 bool
 PlatformLinux::CanDebugProcess ()

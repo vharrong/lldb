@@ -742,6 +742,25 @@ PlatformPOSIX::DisconnectRemote ()
     return error;
 }
 
+Error
+PlatformPOSIX::LaunchProcess (ProcessLaunchInfo &launch_info)
+{
+    Error error;
+
+    if (IsHost())
+    {
+        error = Platform::LaunchProcess (launch_info);
+    }
+    else
+    {
+        if (m_remote_platform_sp)
+            error = m_remote_platform_sp->LaunchProcess (launch_info);
+        else
+            error.SetErrorString ("the platform is not currently connected");
+    }
+    return error;
+}
+
 lldb::ProcessSP
 PlatformPOSIX::DebugProcess (ProcessLaunchInfo &launch_info,
                               Debugger &debugger,
