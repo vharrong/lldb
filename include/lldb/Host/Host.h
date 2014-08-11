@@ -362,6 +362,15 @@ public:
     SetShortThreadName (lldb::pid_t pid, lldb::tid_t tid, const char *name, size_t len);
 
     //------------------------------------------------------------------
+    /// Gets the host environment's native path syntax (Windows / Posix).
+    ///
+    /// @return
+    ///     \b One of {FileSpec::ePathSyntaxWindows, FileSpec::ePathSyntaxPosix}
+    //------------------------------------------------------------------
+    static FileSpec::PathSyntax
+    GetHostPathSyntax();
+
+    //------------------------------------------------------------------
     /// Gets the FileSpec of the user profile directory.  On Posix-platforms
     /// this is ~, and on windows this is generally something like
     /// C:\Users\Alice.
@@ -460,7 +469,7 @@ public:
     ///     \b true if \a resource_path was resolved, \a false otherwise.
     //------------------------------------------------------------------
     static bool
-    GetLLDBPath (PathType path_type,
+    GetLLDBPath (lldb::PathType path_type,
                  FileSpec &file_spec);
 
     //------------------------------------------------------------------

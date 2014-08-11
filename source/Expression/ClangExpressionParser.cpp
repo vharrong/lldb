@@ -230,9 +230,9 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
         m_compiler->getCodeGenOpts().setDebugInfo(CodeGenOptions::NoDebugInfo);
 
     // Disable some warnings.
-    m_compiler->getDiagnostics().setSeverityForGroup(
+    m_compiler->getDiagnostics().setSeverityForGroup(clang::diag::Flavor::WarningOrError,
         "unused-value", clang::diag::Severity::Ignored, SourceLocation());
-    m_compiler->getDiagnostics().setSeverityForGroup(
+    m_compiler->getDiagnostics().setSeverityForGroup(clang::diag::Flavor::WarningOrError,
         "odr", clang::diag::Severity::Ignored, SourceLocation());
 
     // Inform the target of the language options
@@ -309,7 +309,7 @@ ClangExpressionParser::Parse (Stream &stream)
         std::string temp_source_path;
 
         FileSpec tmpdir_file_spec;
-        if (Host::GetLLDBPath (ePathTypeLLDBTempSystemDir, tmpdir_file_spec))
+        if (Host::GetLLDBPath (lldb::ePathTypeLLDBTempSystemDir, tmpdir_file_spec))
         {
             tmpdir_file_spec.GetFilename().SetCString("expr.XXXXXX");
             temp_source_path = std::move(tmpdir_file_spec.GetPath());

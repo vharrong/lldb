@@ -118,7 +118,7 @@ public:
                                const lldb_private::ProcessAttachInfo &attach_info);
 
     virtual void
-    DidAttach ();
+    DidAttach (lldb_private::ArchSpec &process_arch);
 
     //------------------------------------------------------------------
     // PluginInterface protocol
@@ -390,7 +390,7 @@ protected:
     UpdateThreadIDList ();
 
     void
-    DidLaunchOrAttach ();
+    DidLaunchOrAttach (lldb_private::ArchSpec& process_arch);
 
     lldb_private::Error
     ConnectToDebugserver (const char *host_port);

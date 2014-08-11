@@ -1073,6 +1073,16 @@ Host::SetShortThreadName (lldb::pid_t pid, lldb::tid_t tid,
 
 #endif
 
+FileSpec::PathSyntax
+Host::GetHostPathSyntax()
+{
+#if defined(_WIN32)
+    return FileSpec::ePathSyntaxWindows;
+#else
+    return FileSpec::ePathSyntaxPosix;
+#endif
+}
+
 FileSpec
 Host::GetUserProfileFileSpec ()
 {
@@ -1343,7 +1353,6 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                 if (GetLLDBPath (ePathTypeLLDBShlibDir, lldb_file_spec))
                 {
                     char raw_path[PATH_MAX];
-                    char resolved_path[PATH_MAX];
                     lldb_file_spec.GetPath(raw_path, sizeof(raw_path));
 
 #if defined (__APPLE__)
@@ -1383,8 +1392,9 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                             log->Printf ("Host::%s() failed to find /lib/liblldb within the shared lib path, bailing on bin path construction", __FUNCTION__);
                     }
 #endif  // #if defined (__APPLE__)
-                    FileSpec::Resolve (raw_path, resolved_path, sizeof(resolved_path));
-                    g_lldb_support_exe_dir.SetCString(resolved_path);
+                    llvm::SmallString<64> resolved_path(raw_path);
+                    FileSpec::Resolve (resolved_path);
+                    g_lldb_support_exe_dir.SetCString(resolved_path.c_str());
                 }
                 if (log)
                     log->Printf("Host::GetLLDBPath(ePathTypeSupportExecutableDir) => '%s'", g_lldb_support_exe_dir.GetCString());
@@ -1404,7 +1414,6 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                 if (GetLLDBPath (ePathTypeLLDBShlibDir, lldb_file_spec))
                 {
                     char raw_path[PATH_MAX];
-                    char resolved_path[PATH_MAX];
                     lldb_file_spec.GetPath(raw_path, sizeof(raw_path));
 
                     char *framework_pos = ::strstr (raw_path, "LLDB.framework");
@@ -1413,8 +1422,9 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                         framework_pos += strlen("LLDB.framework");
                         ::strncpy (framework_pos, "/Headers", PATH_MAX - (framework_pos - raw_path));
                     }
-                    FileSpec::Resolve (raw_path, resolved_path, sizeof(resolved_path));
-                    g_lldb_headers_dir.SetCString(resolved_path);
+                    llvm::SmallString<64> resolved_path(raw_path);
+                    FileSpec::Resolve (resolved_path);
+                    g_lldb_headers_dir.SetCString(resolved_path.c_str());
                 }
 #else
                 // TODO: Anyone know how we can determine this for linux? Other systems??
@@ -1441,7 +1451,6 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                 if (GetLLDBPath (ePathTypeLLDBShlibDir, lldb_file_spec))
                 {
                     char raw_path[PATH_MAX];
-                    char resolved_path[PATH_MAX];
 #if defined(_WIN32)
                     lldb_file_spec.AppendPathComponent("../lib/site-packages");
                     lldb_file_spec.GetPath(raw_path, sizeof(raw_path));
@@ -1472,8 +1481,9 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
 #if defined (__APPLE__)
                     }
 #endif
-                    FileSpec::Resolve (raw_path, resolved_path, sizeof(resolved_path));
-                    g_lldb_python_dir.SetCString(resolved_path);
+                    llvm::SmallString<64> resolved_path(raw_path);
+                    FileSpec::Resolve (resolved_path);
+                    g_lldb_python_dir.SetCString(resolved_path.c_str());
                 }
                 
                 if (log)
@@ -1499,7 +1509,6 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                 if (GetLLDBPath (ePathTypeLLDBShlibDir, lldb_file_spec))
                 {
                     char raw_path[PATH_MAX];
-                    char resolved_path[PATH_MAX];
                     lldb_file_spec.GetPath(raw_path, sizeof(raw_path));
 
                     char *framework_pos = ::strstr (raw_path, "LLDB.framework");
@@ -1507,8 +1516,9 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                     {
                         framework_pos += strlen("LLDB.framework");
                         ::strncpy (framework_pos, "/Resources/PlugIns", PATH_MAX - (framework_pos - raw_path));
-                        FileSpec::Resolve (raw_path, resolved_path, sizeof(resolved_path));
-                        g_lldb_system_plugin_dir.SetCString(resolved_path);
+                        llvm::SmallString<64> resolved_path(raw_path);
+                        FileSpec::Resolve (resolved_path);
+                        g_lldb_system_plugin_dir.SetCString(resolved_path.c_str());
                     }
                     return false;
                 }
@@ -1543,12 +1553,11 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
             static ConstString g_lldb_user_plugin_dir;
             if (!g_lldb_user_plugin_dir)
             {
-                char user_plugin_path[PATH_MAX];
-                if (FileSpec::Resolve ("~/Library/Application Support/LLDB/PlugIns", 
-                                       user_plugin_path, 
-                                       sizeof(user_plugin_path)))
+                    llvm::SmallString<64> user_plugin_path("~/Library/Application Support/LLDB/PlugIns");
+                    FileSpec::Resolve (user_plugin_path);
+                if (user_plugin_path.size())
                 {
-                    g_lldb_user_plugin_dir.SetCString(user_plugin_path);
+                    g_lldb_user_plugin_dir.SetCString(user_plugin_path.c_str());
                 }
             }
             file_spec.GetDirectory() = g_lldb_user_plugin_dir;
@@ -2430,66 +2439,7 @@ Host::LaunchApplication (const FileSpec &app_file_spec)
 #endif
 
 
-#ifdef LLDB_DISABLE_POSIX
-
-Error
-Host::MakeDirectory (const char* path, uint32_t mode)
-{
-    Error error;
-    error.SetErrorStringWithFormat("%s in not implemented on this host", __PRETTY_FUNCTION__);
-    return error;
-}
-
-Error
-Host::GetFilePermissions (const char* path, uint32_t &file_permissions)
-{
-    Error error;
-    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
-    return error;
-}
-
-Error
-Host::SetFilePermissions (const char* path, uint32_t file_permissions)
-{
-    Error error;
-    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
-    return error;
-}
-
-Error
-Host::Symlink (const char *src, const char *dst)
-{
-    Error error;
-    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
-    return error;
-}
-
-Error
-Host::Readlink (const char *path, char *buf, size_t buf_len)
-{
-    Error error;
-    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
-    return error;
-}
-
-Error
-Host::Unlink (const char *path)
-{
-    Error error;
-    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
-    return error;
-}
-
-Error
-Host::RemoveDirectory (const char* path, bool recurse)
-{
-    Error error;
-    error.SetErrorStringWithFormat("%s is not supported on this host", __PRETTY_FUNCTION__);
-    return error;
-}
-
-#else
-
+#if !defined(_WIN32)
 Error
 Host::MakeDirectory (const char* path, uint32_t file_permissions)
 {
