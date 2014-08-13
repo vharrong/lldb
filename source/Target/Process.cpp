@@ -2891,8 +2891,13 @@ Process::GetSystemRuntime ()
 Process::NextEventAction::EventActionResult
 Process::AttachCompletionHandler::PerformAction (lldb::EventSP &event_sp)
 {
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+
     StateType state = ProcessEventData::GetStateFromEvent (event_sp.get());
-    switch (state) 
+    if (log)
+        log->Printf ("Process::AttachCompletionHandler::%s called with state %s (%d)", __FUNCTION__, StateAsCString(state), static_cast<int> (state));
+
+    switch (state)
     {
         case eStateRunning:
         case eStateConnected:
@@ -2910,11 +2915,18 @@ Process::AttachCompletionHandler::PerformAction (lldb::EventSP &event_sp)
                 if (m_exec_count > 0)
                 {
                     --m_exec_count;
+
+                    if (log)
+                        log->Printf ("Process::AttachCompletionHandler::%s state %s: reduced remaining exec count to %" PRIu32 ", requesting resume", __FUNCTION__, StateAsCString(state), m_exec_count);
+
                     RequestResume();
                     return eEventActionRetry;
                 }
                 else
                 {
+                    if (log)
+                        log->Printf ("Process::AttachCompletionHandler::%s state %s: no more execs expected to start, continuing with attach", __FUNCTION__, StateAsCString(state));
+
                     m_process->CompleteAttach ();
                     return eEventActionSuccess;
                 }
