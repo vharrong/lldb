@@ -2887,6 +2887,14 @@ Process::GetSystemRuntime ()
     return m_system_runtime_ap.get();
 }
 
+Process::AttachCompletionHandler::AttachCompletionHandler (Process *process, uint32_t exec_count) :
+    NextEventAction (process),
+    m_exec_count (exec_count)
+{
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    if (log)
+        log->Printf ("Process::AttachCompletionHandler::%s process=%p, exec_count=%" PRIu32, __FUNCTION__, process, exec_count);
+}
 
 Process::NextEventAction::EventActionResult
 Process::AttachCompletionHandler::PerformAction (lldb::EventSP &event_sp)
