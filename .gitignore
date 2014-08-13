@@ -21,6 +21,9 @@
 # OS X specific files.
 .DS_store
 
+# Remote build configuration files.
+.remote-build.conf
+
 build/
 llvm-build/
 *xcuserdata
