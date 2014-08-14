@@ -1028,7 +1028,7 @@ Platform::DebugProcess (ProcessLaunchInfo &launch_info,
 {
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PLATFORM));
     if (log)
-        log->Printf ("Platform::%s entered (target 0x%p)", __FUNCTION__, target);
+        log->Printf ("Platform::%s entered (target 0x%p)", __FUNCTION__, static_cast<void*>(target));
 
     ProcessSP process_sp;
     // Make sure we stop at the entry point
