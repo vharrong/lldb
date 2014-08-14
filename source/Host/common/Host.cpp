@@ -2333,15 +2333,21 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
             Host::MonitorChildProcessCallback callback = nullptr;
 
             if (!launch_info.GetFlags().Test(lldb::eLaunchFlagDontSetExitStatus))
+            {
                 callback = Process::SetProcessExitStatus;
+                if (log)
+                    log->Printf ("Host::%s monitored child process %s.", __FUNCTION__, callback ? "with Process::SetProcessExitStatus() callback" : "with no callback");
 
-            if (log)
-                log->Printf ("Host::%s monitored child process %s.", __FUNCTION__, callback ? "with Process::SetProcessExitStatus() callback" : "with no callback");
-
-            StartMonitoringChildProcess (callback,
-                                         NULL,
-                                         pid,
-                                         monitor_signals);
+                StartMonitoringChildProcess (callback,
+                                             NULL,
+                                             pid,
+                                             monitor_signals);
+            }
+            else
+            {
+                if (log)
+                    log->Printf ("Host::%s skipping monitoring of child process --- we can't have stub and lldb both check wait status.", __FUNCTION__);
+            }
 
         }
         else
