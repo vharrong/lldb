@@ -2280,6 +2280,7 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
 {
     Error error;
     char exe_path[PATH_MAX];
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
     PlatformSP host_platform_sp (Platform::GetDefaultPlatform ());
 
@@ -2325,28 +2326,33 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
         // If all went well, then set the process ID into the launch info
         launch_info.SetProcessID(pid);
 
-        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
-
         // Make sure we reap any processes we spawn or we will have zombies.
         if (!launch_info.MonitorProcess())
         {
             const bool monitor_signals = false;
-            StartMonitoringChildProcess (Process::SetProcessExitStatus,
+            Host::MonitorChildProcessCallback callback = nullptr;
+
+            if (!launch_info.GetFlags().Test(lldb::eLaunchFlagDontSetExitStatus))
+                callback = Process::SetProcessExitStatus;
+
+            if (log)
+                log->Printf ("Host::%s monitored child process %s.", __FUNCTION__, callback ? "with Process::SetProcessExitStatus() callback" : "with no callback");
+
+            StartMonitoringChildProcess (callback,
                                          NULL,
                                          pid,
                                          monitor_signals);
-            if (log)
-                log->PutCString ("monitored child process with default Process::SetProcessExitStatus.");
+
         }
         else
         {
             if (log)
-                log->PutCString ("monitored child process with user-specified process monitor.");
+                log->Printf ("Host::%s monitored child process with user-specified process monitor.", __FUNCTION__);
         }
     }
     else
     {
-        // Invalid process ID, something didn't go well
+        // Invalid process ID, something didn't go well.
         if (error.Success())
             error.SetErrorString ("process launch failed for unknown reasons");
     }
