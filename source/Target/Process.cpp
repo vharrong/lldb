@@ -2893,7 +2893,7 @@ Process::AttachCompletionHandler::AttachCompletionHandler (Process *process, uin
 {
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf ("Process::AttachCompletionHandler::%s process=%p, exec_count=%" PRIu32, __FUNCTION__, process, exec_count);
+        log->Printf ("Process::AttachCompletionHandler::%s process=%p, exec_count=%" PRIu32, __FUNCTION__, static_cast<void*>(process), exec_count);
 }
 
 Process::NextEventAction::EventActionResult
