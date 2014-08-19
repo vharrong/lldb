@@ -89,10 +89,6 @@ namespace lldb_private {
         int32_t
         GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info) override;
 
-        lldb::ProcessSP
-        Attach(ProcessAttachInfo &attach_info, Debugger &debugger,
-               Target *target, Listener &listener, Error &error) override;
-
         bool
         CanDebugProcess () override;
 

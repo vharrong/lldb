@@ -130,6 +130,13 @@ public:
     lldb_private::Error
     LaunchProcess (lldb_private::ProcessLaunchInfo &launch_info) override;
 
+    virtual lldb::ProcessSP
+    Attach (lldb_private::ProcessAttachInfo &attach_info,
+            lldb_private::Debugger &debugger,
+            lldb_private::Target *target,       // Can be NULL, if NULL create a new target, else use existing one
+            lldb_private::Listener &listener,
+            lldb_private::Error &error);
+
     lldb::ProcessSP
     DebugProcess (lldb_private::ProcessLaunchInfo &launch_info,
                   lldb_private::Debugger &debugger,

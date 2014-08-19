@@ -15,6 +15,7 @@
 // Project includes
 
 #include "lldb/Core/DataBufferHeap.h"
+#include "lldb/Core/Debugger.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Host/File.h"
@@ -756,6 +757,57 @@ PlatformPOSIX::LaunchProcess (ProcessLaunchInfo &launch_info)
             error.SetErrorString ("the platform is not currently connected");
     }
     return error;
+}
+
+lldb::ProcessSP
+PlatformPOSIX::Attach (ProcessAttachInfo &attach_info,
+                       Debugger &debugger,
+                       Target *target,
+                       Listener &listener,
+                       Error &error)
+{
+    lldb::ProcessSP process_sp;
+
+    if (IsHost())
+    {
+        if (target == NULL)
+        {
+            TargetSP new_target_sp;
+
+            error = debugger.GetTargetList().CreateTarget (debugger,
+                                                           NULL,
+                                                           NULL,
+                                                           false,
+                                                           NULL,
+                                                           new_target_sp);
+            target = new_target_sp.get();
+        }
+        else
+            error.Clear();
+
+        if (target && error.Success())
+        {
+            debugger.GetTargetList().SetSelectedTarget(target);
+
+            process_sp = target->CreateProcess (listener, attach_info.GetProcessPluginName(), NULL);
+
+            if (process_sp)
+            {
+                ListenerSP listener_sp (new Listener("lldb.PlatformPOSIX.attach.hijack"));
+                attach_info.SetHijackListener(listener_sp);
+                process_sp->HijackProcessEvents(listener_sp.get());
+                error = process_sp->Attach (attach_info);
+            }
+        }
+    }
+    else
+    {
+        if (m_remote_platform_sp)
+            process_sp = m_remote_platform_sp->Attach (attach_info, debugger, target, listener, error);
+        else
+            error.SetErrorString ("the platform is not currently connected");
+    }
+    return process_sp;
 }
 
 lldb::ProcessSP
