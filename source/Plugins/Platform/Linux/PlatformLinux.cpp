@@ -510,7 +510,12 @@ PlatformLinux::Attach(ProcessAttachInfo &attach_info,
                                                 NULL);
 
             if (process_sp)
+            {
+                ListenerSP listener_sp (new Listener("lldb.PlatformLinux.attach.hijack"));
+                attach_info.SetHijackListener(listener_sp);
+                process_sp->HijackProcessEvents(listener_sp.get());
                 error = process_sp->Attach (attach_info);
+            }
         }
     }
     else
