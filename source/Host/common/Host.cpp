@@ -2449,8 +2449,6 @@ Host::LaunchProcessForkPipeExec (const char *exe_path, ProcessLaunchInfo &launch
     }
 
     // File actions.
-    std::map<std::string, int> path_fd_map;
-
     for (size_t i = 0; i < launch_info.GetNumFileActions (); ++i)
     {
         const FileAction *action = launch_info.GetFileActionAtIndex(i);
@@ -2489,50 +2487,43 @@ Host::LaunchProcessForkPipeExec (const char *exe_path, ProcessLaunchInfo &launch
             case FileAction::eFileActionOpen:
                 {
                     assert (action->GetPath () && "launch_info file open action with no path");
-                    const int new_fd = action->GetFD ();
 
-                    // Check if we've already opened this path.  If so, duplicate it instead.
-                    auto find_it = path_fd_map.find (action->GetPath ());
-                    if (find_it != path_fd_map.end ())
+                    // Open the file specified.
+                    const int new_fd = action->GetFD ();
+                    assert (new_fd > -1 && "invalid file descriptor specified");
+                    if (new_fd <= -1)
                     {
                         if (log)
-                            log->Printf ("Host::%s forked child pid %" PRIu64 " open file (new_fd=%d, path='%s'): duplicating from already-opened fd %d", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), action->GetFD (), action->GetPath (), find_it->second);
+                            log->Printf ("Host::%s invalid file descriptor specified for file action: %d", __FUNCTION__, new_fd);
 
-                        // Duplicate it rather than open it anew.
-                        DuplicateFilePOSIX (find_it->second, new_fd);
+                        // FIXME do error checking before the fork, so we can meaningfully report back to the caller.  This is too late to be catching this, we've already forked.
+                        // For now, just kill the forked child.
+                        exit (-1);
+                    }
+
+                    // The open() mode arg is ignored unless we do a create.
+                    const int open_flags = action->GetActionArgument ();
+                    const mode_t mode = (open_flags & O_CREAT) ? 0640 : 0;
+
+                    const int opened_fd = open(action->GetPath (), open_flags, mode);
+                    if (opened_fd == -1)
+                    {
+                        error.SetErrorToErrno ();
+                        if (log)
+                            log->Printf ("Host::%s forked child failed to open file '%s': %s", __FUNCTION__, action->GetPath (), error.AsCString ());
                     }
                     else
                     {
-                        // Open the file specified.
-                        const int open_flags = action->GetActionArgument ();
-
-                        mode_t mode = 0;
-                        if (open_flags & O_CREAT)
-                            mode = 0640;
-
-                        const int opened_fd = open(action->GetPath (), open_flags, mode);
-                        if (opened_fd == -1)
+                        if (dup2 (opened_fd, new_fd) == -1)
                         {
                             error.SetErrorToErrno ();
                             if (log)
-                                log->Printf ("Host::%s forked child failed to open file '%s': %s", __FUNCTION__, action->GetPath (), error.AsCString ());
+                                log->Printf ("Host::%s forked child failed to dup2 file '%s' (fd %d) to new fd %d: %s", __FUNCTION__, action->GetPath (), opened_fd, action->GetFD (), error.AsCString ());
                         }
                         else
                         {
-                            if (dup2 (opened_fd, new_fd) == -1)
-                            {
-                                error.SetErrorToErrno ();
-                                if (log)
-                                    log->Printf ("Host::%s forked child failed to dup2 file '%s' (fd %d) to new fd %d: %s", __FUNCTION__, action->GetPath (), opened_fd, action->GetFD (), error.AsCString ());
-                            }
-                            else
-                            {
-                                // Keep track of the opened file so we can dupe it later if the path is duplicated.
-                                path_fd_map.insert (std::make_pair (std::string(action->GetPath ()), new_fd));
-
-                                if (log)
-                                    log->Printf ("Host::%s forked child pid %" PRIu64 " open file (new_fd=%d, path='%s'): SUCCESS", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), action->GetFD (), action->GetPath ());
-                            }
+                            if (log)
+                                log->Printf ("Host::%s forked child pid %" PRIu64 " open file (new_fd=%d, path='%s'): SUCCESS", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), action->GetFD (), action->GetPath ());
                         }
                     }
                 }
