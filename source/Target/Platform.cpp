@@ -19,7 +19,9 @@
 #include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Host/FileSpec.h"
+#include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Host/HostInfo.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/Utils.h"
@@ -91,7 +93,7 @@ Platform::GetFileWithUUID (const FileSpec &platform_file,
 }
 
 FileSpecList
-Platform::LocateExecutableScriptingResources (Target *target, Module &module)
+Platform::LocateExecutableScriptingResources (Target *target, Module &module, Stream* feedback_stream)
 {
     return FileSpecList();
 }
@@ -348,9 +350,7 @@ Platform::GetOSVersion (uint32_t &major,
         if (!success)
         {
             // We have a local host platform
-            success = Host::GetOSVersion (m_major_os_version, 
-                                          m_minor_os_version, 
-                                          m_update_os_version);
+            success = HostInfo::GetOSVersion(m_major_os_version, m_minor_os_version, m_update_os_version);
             m_os_version_set_while_connected = success;
         }
     }
@@ -397,8 +397,14 @@ Platform::GetOSVersion (uint32_t &major,
 bool
 Platform::GetOSBuildString (std::string &s)
 {
+    s.clear();
+
     if (IsHost())
-        return Host::GetOSBuildString (s);
+#if !defined(__linux__)
+        return HostInfo::GetOSBuildString(s);
+#else
+        return false;
+#endif
     else
         return GetRemoteOSBuildString (s);
 }
@@ -407,7 +413,11 @@ bool
 Platform::GetOSKernelDescription (std::string &s)
 {
     if (IsHost())
-        return Host::GetOSKernelDescription (s);
+#if !defined(__linux__)
+        return HostInfo::GetOSKernelDescription(s);
+#else
+        return false;
+#endif
     else
         return GetRemoteOSKernelDescription (s);
 }
@@ -494,8 +504,8 @@ RecurseCopy_Callback (void *baton,
                     dst_file.GetFilename() = src.GetFilename();
                 
                 char buf[PATH_MAX];
-                
-                rc_baton->error = Host::Readlink (src.GetPath().c_str(), buf, sizeof(buf));
+
+                rc_baton->error = FileSystem::Readlink(src.GetPath().c_str(), buf, sizeof(buf));
 
                 if (rc_baton->error.Fail())
                     return FileSpec::eEnumerateDirectoryResultQuit; // got an error, bail out
@@ -649,7 +659,7 @@ Platform::Install (const FileSpec& src, const FileSpec& dst)
                     if (GetFileExists (fixed_dst))
                         Unlink (fixed_dst.GetPath().c_str());
                     char buf[PATH_MAX];
-                    error = Host::Readlink(src.GetPath().c_str(), buf, sizeof(buf));
+                    error = FileSystem::Readlink(src.GetPath().c_str(), buf, sizeof(buf));
                     if (error.Success())
                         error = CreateSymlink(dst.GetPath().c_str(), buf);
                 }
@@ -701,7 +711,7 @@ Error
 Platform::MakeDirectory (const char *path, uint32_t permissions)
 {
     if (IsHost())
-        return Host::MakeDirectory (path, permissions);
+        return FileSystem::MakeDirectory(path, permissions);
     else
     {
         Error error;
@@ -714,7 +724,7 @@ Error
 Platform::GetFilePermissions (const char *path, uint32_t &file_permissions)
 {
     if (IsHost())
-        return Host::GetFilePermissions(path, file_permissions);
+        return FileSystem::GetFilePermissions(path, file_permissions);
     else
     {
         Error error;
@@ -727,7 +737,7 @@ Error
 Platform::SetFilePermissions (const char *path, uint32_t file_permissions)
 {
     if (IsHost())
-        return Host::SetFilePermissions(path, file_permissions);
+        return FileSystem::SetFilePermissions(path, file_permissions);
     else
     {
         Error error;
@@ -800,8 +810,8 @@ Platform::SetOSVersion (uint32_t major,
 {
     if (IsHost())
     {
-        // We don't need anyone setting the OS version for the host platform, 
-        // we should be able to figure it out by calling Host::GetOSVersion(...).
+        // We don't need anyone setting the OS version for the host platform,
+        // we should be able to figure it out by calling HostInfo::GetOSVersion(...).
         return false; 
     }
     else
@@ -1209,7 +1219,7 @@ Platform::CalculateMD5 (const FileSpec& file_spec,
                         uint64_t &high)
 {
     if (IsHost())
-        return Host::CalculateMD5(file_spec, low, high);
+        return FileSystem::CalculateMD5(file_spec, low, high);
     else
         return false;
 }

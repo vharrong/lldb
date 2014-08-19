@@ -23,6 +23,7 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Host/HostInfo.h"
 #include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
@@ -294,10 +295,17 @@ PlatformWindows::ResolveExecutable (const FileSpec &exe_file,
 
             if (error.Fail() || !exe_module_sp)
             {
-                error.SetErrorStringWithFormat ("'%s' doesn't contain any '%s' platform architectures: %s",
-                                                exe_file.GetPath().c_str(),
-                                                GetPluginName().GetCString(),
-                                                arch_names.GetString().c_str());
+                if (exe_file.Readable())
+                {
+                    error.SetErrorStringWithFormat ("'%s' doesn't contain any '%s' platform architectures: %s",
+                                                    exe_file.GetPath().c_str(),
+                                                    GetPluginName().GetCString(),
+                                                    arch_names.GetString().c_str());
+                }
+                else
+                {
+                    error.SetErrorStringWithFormat("'%s' is not readable", exe_file.GetPath().c_str());
+                }
             }
         }
     }
@@ -655,7 +663,7 @@ PlatformWindows::GetStatus (Stream &strm)
     uint32_t major;
     uint32_t minor;
     uint32_t update;
-    if (!Host::GetOSVersion(major, minor, update))
+    if (!HostInfo::GetOSVersion(major, minor, update))
     {
         strm << "Windows";
         return;

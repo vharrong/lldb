@@ -763,19 +763,19 @@ ProcessGDBRemote::DoLaunch (Module *exe_module, ProcessLaunchInfo &launch_info)
     file_action = launch_info.GetFileActionForFD (STDIN_FILENO);
     if (file_action)
     {
-        if (file_action->GetAction () == FileAction::eFileActionOpen)
+        if (file_action->GetAction() == FileAction::eFileActionOpen)
             stdin_path = file_action->GetPath();
     }
     file_action = launch_info.GetFileActionForFD (STDOUT_FILENO);
     if (file_action)
     {
-        if (file_action->GetAction () == FileAction::eFileActionOpen)
+        if (file_action->GetAction() == FileAction::eFileActionOpen)
             stdout_path = file_action->GetPath();
     }
     file_action = launch_info.GetFileActionForFD (STDERR_FILENO);
     if (file_action)
     {
-        if (file_action->GetAction () == FileAction::eFileActionOpen)
+        if (file_action->GetAction() == FileAction::eFileActionOpen)
             stderr_path = file_action->GetPath();
     }
 

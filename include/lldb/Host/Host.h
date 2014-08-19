@@ -91,49 +91,6 @@ public:
                                  lldb::pid_t pid,
                                  bool monitor_signals);
 
-    //------------------------------------------------------------------
-    /// Get the host page size.
-    ///
-    /// @return
-    ///     The size in bytes of a VM page on the host system.
-    //------------------------------------------------------------------
-    static size_t
-    GetPageSize();
-
-    //------------------------------------------------------------------
-    /// Returns the endianness of the host system.
-    ///
-    /// @return
-    ///     Returns the endianness of the host system as a lldb::ByteOrder
-    ///     enumeration.
-    //------------------------------------------------------------------
-    static lldb::ByteOrder
-    GetByteOrder ();
-
-    //------------------------------------------------------------------
-    /// Returns the number of CPUs on this current host.
-    ///
-    /// @return
-    ///     Number of CPUs on this current host, or zero if the number
-    ///     of CPUs can't be determined on this host.
-    //------------------------------------------------------------------
-    static uint32_t
-    GetNumberCPUS ();
-
-    static bool
-    GetOSVersion (uint32_t &major, 
-                  uint32_t &minor, 
-                  uint32_t &update);
-
-    static bool
-    GetOSBuildString (std::string &s);
-    
-    static bool
-    GetOSKernelDescription (std::string &s);
-
-    static bool
-    GetHostname (std::string &s);
-
     static const char *
     GetUserName (uint32_t uid, std::string &user_name);
     
@@ -181,50 +138,6 @@ public:
 
     static const ArchSpec &
     GetArchitecture (SystemDefaultArchitecture arch_kind = eSystemDefaultArchitecture);
-
-    //------------------------------------------------------------------
-    /// Gets the host vendor string.
-    ///
-    /// @return
-    ///     A const string object containing the host vendor name.
-    //------------------------------------------------------------------
-    static const ConstString &
-    GetVendorString ();
-
-    //------------------------------------------------------------------
-    /// Gets the host Operating System (OS) string.
-    ///
-    /// @return
-    ///     A const string object containing the host OS name.
-    //------------------------------------------------------------------
-    static const ConstString &
-    GetOSString ();
-
-    //------------------------------------------------------------------
-    /// Gets the host target triple as a const string.
-    ///
-    /// @return
-    ///     A const string object containing the host target triple.
-    //------------------------------------------------------------------
-    static const ConstString &
-    GetTargetTriple ();
-
-    //------------------------------------------------------------------
-    /// Gets the name of the distribution (i.e. distributor id).
-    ///
-    /// On Linux, this will return the equivalent of lsb_release -i.
-    /// Android will return 'android'.  Other systems may return
-    /// nothing.
-    ///
-    /// @return
-    ///     A ConstString reference containing the OS distribution id.
-    ///     The return string will be all lower case, with whitespace
-    ///     replaced with underscores.  The return string will be
-    ///     empty (result.AsCString() will return NULL) if the distribution
-    ///     cannot be obtained.
-    //------------------------------------------------------------------
-    static const ConstString &
-    GetDistributionId ();
 
     //------------------------------------------------------------------
     /// Get the process ID for the calling process.
@@ -363,15 +276,6 @@ public:
     ///     otherwise.
     static bool
     SetShortThreadName (lldb::pid_t pid, lldb::tid_t tid, const char *name, size_t len);
-
-    //------------------------------------------------------------------
-    /// Gets the host environment's native path syntax (Windows / Posix).
-    ///
-    /// @return
-    ///     \b One of {FileSpec::ePathSyntaxWindows, FileSpec::ePathSyntaxPosix}
-    //------------------------------------------------------------------
-    static FileSpec::PathSyntax
-    GetHostPathSyntax();
 
     //------------------------------------------------------------------
     /// Gets the FileSpec of the user profile directory.  On Posix-platforms
@@ -572,63 +476,6 @@ public:
     DynamicLibraryGetSymbol (void *dynamic_library_handle, 
                              const char *symbol_name, 
                              Error &error);
-    
-    static Error
-    MakeDirectory (const char* path, uint32_t mode);
-    
-    static Error
-    RemoveDirectory (const char* path, bool recurse);
-    
-    static Error
-    GetFilePermissions (const char* path, uint32_t &file_permissions);
-
-    static Error
-    SetFilePermissions (const char* path, uint32_t file_permissions);
-    
-    static Error
-    Symlink (const char *src, const char *dst);
-    
-    static Error
-    Readlink (const char *path, char *buf, size_t buf_len);
-
-    static Error
-    Unlink (const char *path);
-
-    static lldb::user_id_t
-    OpenFile (const FileSpec& file_spec,
-              uint32_t flags,
-              uint32_t mode,
-              Error &error);
-    
-    static bool
-    CloseFile (lldb::user_id_t fd,
-               Error &error);
-    
-    static uint64_t
-    WriteFile (lldb::user_id_t fd,
-               uint64_t offset,
-               const void* src,
-               uint64_t src_len,
-               Error &error);
-    
-    static uint64_t
-    ReadFile (lldb::user_id_t fd,
-              uint64_t offset,
-              void* dst,
-              uint64_t dst_len,
-              Error &error);
-
-    static lldb::user_id_t
-    GetFileSize (const FileSpec& file_spec);
-    
-    static bool
-    GetFileExists (const FileSpec& file_spec);
-    
-    static bool
-    CalculateMD5 (const FileSpec& file_spec,
-                  uint64_t &low,
-                  uint64_t &high);
-
 };
 
 } // namespace lldb_private

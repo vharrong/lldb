@@ -35,7 +35,7 @@ set( LLDB_USED_LIBS
   lldbBreakpoint
   lldbCommands
   lldbDataFormatters
-  lldbHostCommon
+  lldbHost
   lldbCore
   lldbExpression
   lldbInterpreter
@@ -97,7 +97,6 @@ endif ()
 # Windows-only libraries
 if ( CMAKE_SYSTEM_NAME MATCHES "Windows" )
   list(APPEND LLDB_USED_LIBS
-    lldbHostWindows
     lldbPluginProcessWindows
     lldbPluginProcessElfCore
     lldbPluginJITLoaderGDB
@@ -108,7 +107,6 @@ endif ()
 # Linux-only libraries
 if ( CMAKE_SYSTEM_NAME MATCHES "Linux" )
   list(APPEND LLDB_USED_LIBS
-    lldbHostLinux
     lldbPluginProcessLinux
     lldbPluginProcessPOSIX
     lldbPluginProcessElfCore
@@ -119,7 +117,6 @@ endif ()
 # FreeBSD-only libraries
 if ( CMAKE_SYSTEM_NAME MATCHES "FreeBSD" )
   list(APPEND LLDB_USED_LIBS
-    lldbHostFreeBSD
     lldbPluginProcessFreeBSD
     lldbPluginProcessPOSIX
     lldbPluginProcessElfCore
@@ -137,7 +134,6 @@ if ( CMAKE_SYSTEM_NAME MATCHES "Darwin" )
 
   set_source_files_properties(${LLDB_VERS_GENERATED_FILE} PROPERTIES GENERATED 1)
   list(APPEND LLDB_USED_LIBS
-    lldbHostMacOSX
     lldbPluginDynamicLoaderDarwinKernel
     lldbPluginProcessMacOSXKernel
     lldbPluginSymbolVendorMacOSX

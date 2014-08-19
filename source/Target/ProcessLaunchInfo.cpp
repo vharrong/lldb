@@ -41,24 +41,21 @@ ProcessLaunchInfo::ProcessLaunchInfo () :
 {
 }
 
-ProcessLaunchInfo::ProcessLaunchInfo (const char *stdin_path,
-                                      const char *stdout_path,
-                                      const char *stderr_path,
-                                      const char *working_directory,
-                                      uint32_t launch_flags) :
-    ProcessInfo(),
-    m_working_dir (),
-    m_plugin_name (),
-    m_shell (),
-    m_flags (launch_flags),
-    m_file_actions (),
-    m_pty (),
-    m_resume_count (0),
-    m_monitor_callback (NULL),
-    m_monitor_callback_baton (NULL),
-    m_monitor_signals (false),
-    m_hijack_listener_sp (),
-    m_launch_sync_pipe_sp ()
+ProcessLaunchInfo::ProcessLaunchInfo(const char *stdin_path, const char *stdout_path, const char *stderr_path,
+                                     const char *working_directory, uint32_t launch_flags)
+    : ProcessInfo()
+    , m_working_dir()
+    , m_plugin_name()
+    , m_shell()
+    , m_flags(launch_flags)
+    , m_file_actions()
+    , m_pty()
+    , m_resume_count(0)
+    , m_monitor_callback(NULL)
+    , m_monitor_callback_baton(NULL)
+    , m_monitor_signals(false)
+    , m_hijack_listener_sp()
+    , m_launch_sync_pipe_sp ()
 {
     if (stdin_path)
     {
@@ -137,7 +134,7 @@ ProcessLaunchInfo::AppendSuppressFileAction (int fd, bool read, bool write)
 }
 
 const FileAction *
-ProcessLaunchInfo::GetFileActionAtIndex (size_t idx) const
+ProcessLaunchInfo::GetFileActionAtIndex(size_t idx) const
 {
     if (idx < m_file_actions.size())
         return &m_file_actions[idx];
@@ -145,7 +142,7 @@ ProcessLaunchInfo::GetFileActionAtIndex (size_t idx) const
 }
 
 const FileAction *
-ProcessLaunchInfo::GetFileActionForFD (int fd) const
+ProcessLaunchInfo::GetFileActionForFD(int fd) const
 {
     for (size_t idx=0, count=m_file_actions.size(); idx < count; ++idx)
     {

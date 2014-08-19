@@ -1518,6 +1518,9 @@ Module::LoadScriptingResourceInTarget (Target *target, Error& error, Stream* fee
     
     LoadScriptFromSymFile should_load = target->TargetProperties::GetLoadScriptFromSymbolFile();
     
+    if (should_load == eLoadScriptFromSymFileFalse)
+        return false;
+    
     Debugger &debugger = target->GetDebugger();
     const ScriptLanguage script_language = debugger.GetScriptLanguage();
     if (script_language != eScriptLanguageNone)
@@ -1532,7 +1535,8 @@ Module::LoadScriptingResourceInTarget (Target *target, Error& error, Stream* fee
         }
 
         FileSpecList file_specs = platform_sp->LocateExecutableScriptingResources (target,
-                                                                                   *this);
+                                                                                   *this,
+                                                                                   feedback_stream);
         
         
         const uint32_t num_specs = file_specs.GetSize();
@@ -1546,8 +1550,6 @@ Module::LoadScriptingResourceInTarget (Target *target, Error& error, Stream* fee
                     FileSpec scripting_fspec (file_specs.GetFileSpecAtIndex(i));
                     if (scripting_fspec && scripting_fspec.Exists())
                     {
-                        if (should_load == eLoadScriptFromSymFileFalse)
-                            return false;
                         if (should_load == eLoadScriptFromSymFileWarn)
                         {
                             if (feedback_stream)
