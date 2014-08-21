@@ -44,7 +44,7 @@ PlatformMacOSX::Initialize ()
     {
 #if defined (__APPLE__)
         PlatformSP default_platform_sp (new PlatformMacOSX(true));
-        default_platform_sp->SetSystemArchitecture (Host::GetArchitecture());
+        default_platform_sp->SetSystemArchitecture(HostInfo::GetArchitecture());
         Platform::SetDefaultPlatform (default_platform_sp);
 #endif        
         PluginManager::RegisterPlugin (PlatformMacOSX::GetPluginNameStatic(false),
@@ -178,7 +178,7 @@ PlatformMacOSX::GetSDKDirectory (lldb_private::Target &target)
             uint32_t versions[2];
             if (objfile->GetSDKVersion(versions, sizeof(versions)))
             {
-                if (Host::GetLLDBPath (ePathTypeLLDBShlibDir, fspec))
+                if (HostInfo::GetLLDBPath(ePathTypeLLDBShlibDir, fspec))
                 {
                     std::string path;
                     xcode_contents_path = fspec.GetPath();

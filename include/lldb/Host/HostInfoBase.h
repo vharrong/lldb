@@ -10,6 +10,10 @@
 #ifndef lldb_Host_HostInfoBase_h_
 #define lldb_Host_HostInfoBase_h_
 
+#include "lldb/Core/ArchSpec.h"
+#include "lldb/Host/FileSpec.h"
+#include "lldb/lldb-enumerations.h"
+
 #include "llvm/ADT/StringRef.h"
 
 #include <stdint.h>
@@ -19,6 +23,8 @@
 namespace lldb_private
 {
 
+class FileSpec;
+
 class HostInfoBase
 {
   private:
@@ -27,6 +33,8 @@ class HostInfoBase
     ~HostInfoBase() {}
 
   public:
+    static void Initialize();
+
     //------------------------------------------------------------------
     /// Returns the number of CPUs on this current host.
     ///
@@ -60,11 +68,51 @@ class HostInfoBase
     //------------------------------------------------------------------
     static llvm::StringRef GetTargetTriple();
 
+    //------------------------------------------------------------------
+    /// Gets the host architecture.
+    ///
+    /// @return
+    ///     A const architecture object that represents the host
+    ///     architecture.
+    //------------------------------------------------------------------
+    enum ArchitectureKind
+    {
+        eArchKindDefault, // The overall default architecture that applications will run on this host
+        eArchKind32,      // If this host supports 32 bit programs, return the default 32 bit arch
+        eArchKind64       // If this host supports 64 bit programs, return the default 64 bit arch
+    };
+
+    static const ArchSpec &GetArchitecture(ArchitectureKind arch_kind = eArchKindDefault);
+
+    //------------------------------------------------------------------
+    /// Find a resource files that are related to LLDB.
+    ///
+    /// Operating systems have different ways of storing shared
+    /// libraries and related resources. This function abstracts the
+    /// access to these paths.
+    ///
+    /// @param[in] path_type
+    ///     The type of LLDB resource path you are looking for. If the
+    ///     enumeration ends with "Dir", then only the \a file_spec's
+    ///     directory member gets filled in.
+    ///
+    /// @param[in] file_spec
+    ///     A file spec that gets filled in with the appropriate path.
+    ///
+    /// @return
+    ///     \b true if \a resource_path was resolved, \a false otherwise.
+    //------------------------------------------------------------------
+    static bool GetLLDBPath(lldb::PathType type, FileSpec &file_spec);
+
   protected:
-    static uint32_t m_number_cpus;
-    static std::string m_vendor_string;
-    static std::string m_os_string;
-    static std::string m_host_triple;
+    static bool ComputeSharedLibraryDirectory(FileSpec &file_spec);
+    static bool ComputeSupportExeDirectory(FileSpec &file_spec);
+    static bool ComputeTempFileDirectory(FileSpec &file_spec);
+    static bool ComputeHeaderDirectory(FileSpec &file_spec);
+    static bool ComputeSystemPluginsDirectory(FileSpec &file_spec);
+    static bool ComputeUserPluginsDirectory(FileSpec &file_spec);
+
+    static void ComputeHostArchitectureSupport(ArchSpec &arch_32, ArchSpec &arch_64);
 };
 }
 

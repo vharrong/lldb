@@ -20,11 +20,17 @@
 #include <linux/unistd.h>
 #include <sys/personality.h>
 #include <sys/ptrace.h>
+#include <sys/uio.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/user.h>
 #include <sys/wait.h>
+
+#if defined (__arm64__) || defined (__aarch64__)
+// NT_PRSTATUS and NT_FPREGSET definition
+#include <elf.h>
+#endif
 
 // C++ Includes
 #include <fstream>
@@ -38,6 +44,7 @@
 #include "lldb/Core/Scalar.h"
 #include "lldb/Core/State.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Host/HostInfo.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/NativeRegisterContext.h"
 #include "lldb/Target/ProcessLaunchInfo.h"
@@ -661,10 +668,22 @@ namespace
     void
     ReadGPROperation::Execute(NativeProcessLinux *monitor)
     {
+#if defined (__arm64__) || defined (__aarch64__)
+        int regset = NT_PRSTATUS;
+        struct iovec ioVec;
+
+        ioVec.iov_base = m_buf;
+        ioVec.iov_len = m_buf_size;
+        if (PTRACE(PTRACE_GETREGSET, m_tid, &regset, &ioVec, m_buf_size) < 0)
+            m_result = false;
+        else
+            m_result = true;
+#else
         if (PTRACE(PTRACE_GETREGS, m_tid, NULL, m_buf, m_buf_size) < 0)
             m_result = false;
         else
             m_result = true;
+#endif
     }
 
     //------------------------------------------------------------------------------
@@ -689,10 +708,22 @@ namespace
     void
     ReadFPROperation::Execute(NativeProcessLinux *monitor)
     {
+#if defined (__arm64__) || defined (__aarch64__)
+        int regset = NT_FPREGSET;
+        struct iovec ioVec;
+
+        ioVec.iov_base = m_buf;
+        ioVec.iov_len = m_buf_size;
+        if (PTRACE(PTRACE_GETREGSET, m_tid, &regset, &ioVec, m_buf_size) < 0)
+            m_result = false;
+        else
+            m_result = true;
+#else
         if (PTRACE(PTRACE_GETFPREGS, m_tid, NULL, m_buf, m_buf_size) < 0)
             m_result = false;
         else
             m_result = true;
+#endif
     }
 
     //------------------------------------------------------------------------------
@@ -746,10 +777,22 @@ namespace
     void
     WriteGPROperation::Execute(NativeProcessLinux *monitor)
     {
+#if defined (__arm64__) || defined (__aarch64__)
+        int regset = NT_PRSTATUS;
+        struct iovec ioVec;
+
+        ioVec.iov_base = m_buf;
+        ioVec.iov_len = m_buf_size;
+        if (PTRACE(PTRACE_SETREGSET, m_tid, &regset, &ioVec, m_buf_size) < 0)
+            m_result = false;
+        else
+            m_result = true;
+#else
         if (PTRACE(PTRACE_SETREGS, m_tid, NULL, m_buf, m_buf_size) < 0)
             m_result = false;
         else
             m_result = true;
+#endif
     }
 
     //------------------------------------------------------------------------------
@@ -774,10 +817,22 @@ namespace
     void
     WriteFPROperation::Execute(NativeProcessLinux *monitor)
     {
+#if defined (__arm64__) || defined (__aarch64__)
+        int regset = NT_FPREGSET;
+        struct iovec ioVec;
+
+        ioVec.iov_base = m_buf;
+        ioVec.iov_len = m_buf_size;
+        if (PTRACE(PTRACE_SETREGSET, m_tid, &regset, &ioVec, m_buf_size) < 0)
+            m_result = false;
+        else
+            m_result = true;
+#else
         if (PTRACE(PTRACE_SETFPREGS, m_tid, NULL, m_buf, m_buf_size) < 0)
             m_result = false;
         else
             m_result = true;
+#endif
     }
 
     //------------------------------------------------------------------------------
@@ -1266,10 +1321,8 @@ NativeProcessLinux::AttachToInferior (lldb::pid_t pid, lldb_private::Error &erro
     ModuleSP exe_module_sp;
     FileSpecList executable_search_paths (Target::GetDefaultExecutableSearchPaths());
 
-    error = platform_sp->ResolveExecutable(process_info.GetExecutableFile(),
-                                    Host::GetArchitecture(),
-                                    exe_module_sp,
-                                    executable_search_paths.GetSize() ? &executable_search_paths : NULL);
+    error = platform_sp->ResolveExecutable(process_info.GetExecutableFile(), HostInfo::GetArchitecture(), exe_module_sp,
+                                           executable_search_paths.GetSize() ? &executable_search_paths : NULL);
     if (!error.Success())
         return;
 
@@ -2930,10 +2983,15 @@ NativeProcessLinux::GetSoftwareBreakpointSize (NativeRegisterContextSP context_s
 {
     // FIXME put this behind a breakpoint protocol class that can be
     // set per architecture.  Need ARM, MIPS support here.
+    static const uint8_t g_aarch64_opcode[] = { 0x00, 0x00, 0x20, 0xd4 };
     static const uint8_t g_i386_opcode [] = { 0xCC };
 
     switch (m_arch.GetMachine ())
     {
+        case llvm::Triple::aarch64:
+            actual_opcode_size = static_cast<uint32_t> (sizeof(g_aarch64_opcode));
+            return Error ();
+
         case llvm::Triple::x86:
         case llvm::Triple::x86_64:
             actual_opcode_size = static_cast<uint32_t> (sizeof(g_i386_opcode));
@@ -2959,10 +3017,16 @@ NativeProcessLinux::GetSoftwareBreakpointTrapOpcode (size_t trap_opcode_size_hin
 {
     // FIXME put this behind a breakpoint protocol class that can be
     // set per architecture.  Need ARM, MIPS support here.
+    static const uint8_t g_aarch64_opcode[] = { 0x00, 0x00, 0x20, 0xd4 };
     static const uint8_t g_i386_opcode [] = { 0xCC };
 
     switch (m_arch.GetMachine ())
     {
+    case llvm::Triple::aarch64:
+        trap_opcode_bytes = g_aarch64_opcode;
+        actual_opcode_size = sizeof(g_aarch64_opcode);
+        return Error ();
+
     case llvm::Triple::x86:
     case llvm::Triple::x86_64:
         trap_opcode_bytes = g_i386_opcode;

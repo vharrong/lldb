@@ -1188,7 +1188,7 @@ GDBRemoteCommunicationServer::Handle_qHostInfo (StringExtractorGDBRemote &packet
 
     // $cputype:16777223;cpusubtype:3;ostype:Darwin;vendor:apple;endian:little;ptrsize:8;#00
 
-    ArchSpec host_arch (Host::GetArchitecture ());
+    ArchSpec host_arch(HostInfo::GetArchitecture());
     const llvm::Triple &host_triple = host_arch.GetTriple();
     response.PutCString("triple:");
     response.PutCString(host_triple.getTriple().c_str());
@@ -1538,19 +1538,21 @@ GDBRemoteCommunicationServer::Handle_qsProcessInfo (StringExtractorGDBRemote &pa
 GDBRemoteCommunication::PacketResult
 GDBRemoteCommunicationServer::Handle_qUserName (StringExtractorGDBRemote &packet)
 {
+#if !defined(LLDB_DISABLE_POSIX)
     // Packet format: "qUserName:%i" where %i is the uid
     packet.SetFilePos(::strlen ("qUserName:"));
     uint32_t uid = packet.GetU32 (UINT32_MAX);
     if (uid != UINT32_MAX)
     {
         std::string name;
-        if (Host::GetUserName (uid, name))
+        if (HostInfo::LookupUserName(uid, name))
         {
             StreamString response;
             response.PutCStringAsRawHex8 (name.c_str());
             return SendPacketNoLock (response.GetData(), response.GetSize());
         }
     }
+#endif
     return SendErrorResponse (5);
 
 }
@@ -1558,19 +1560,21 @@ GDBRemoteCommunicationServer::Handle_qUserName (StringExtractorGDBRemote &packet
 GDBRemoteCommunication::PacketResult
 GDBRemoteCommunicationServer::Handle_qGroupName (StringExtractorGDBRemote &packet)
 {
+#if !defined(LLDB_DISABLE_POSIX)
     // Packet format: "qGroupName:%i" where %i is the gid
     packet.SetFilePos(::strlen ("qGroupName:"));
     uint32_t gid = packet.GetU32 (UINT32_MAX);
     if (gid != UINT32_MAX)
     {
         std::string name;
-        if (Host::GetGroupName (gid, name))
+        if (HostInfo::LookupGroupName(gid, name))
         {
             StreamString response;
             response.PutCStringAsRawHex8 (name.c_str());
             return SendPacketNoLock (response.GetData(), response.GetSize());
         }
     }
+#endif
     return SendErrorResponse (6);
 }
 

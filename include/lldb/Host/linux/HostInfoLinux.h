@@ -20,20 +20,23 @@ namespace lldb_private
 
 class HostInfoLinux : public HostInfoPosix
 {
+    friend class HostInfoBase;
+
   private:
     // Static class, unconstructable.
     HostInfoLinux();
     ~HostInfoLinux();
 
   public:
+    static void Initialize();
+
     static bool GetOSVersion(uint32_t &major, uint32_t &minor, uint32_t &update);
     static llvm::StringRef GetDistributionId();
 
   protected:
-    static std::string m_distribution_id;
-    static uint32_t m_os_major;
-    static uint32_t m_os_minor;
-    static uint32_t m_os_update;
+    static bool ComputeSystemPluginsDirectory(FileSpec &file_spec);
+    static bool ComputeUserPluginsDirectory(FileSpec &file_spec);
+    static void ComputeHostArchitectureSupport(ArchSpec &arch_32, ArchSpec &arch_64);
 };
 }
 
