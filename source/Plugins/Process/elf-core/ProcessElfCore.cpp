@@ -588,3 +588,12 @@ ProcessElfCore::GetAuxvData()
     return buffer;
 }
 
+lldb_private::UnixSignals &
+ProcessElfCore::GetUnixSignals()
+{
+    if (m_signals_sp)
+        return *m_signals_sp;
+    else
+        return Process::GetUnixSignals();
+}
+

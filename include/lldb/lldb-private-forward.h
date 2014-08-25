@@ -25,6 +25,7 @@ namespace lldb_private
     class NativeRegisterContext;
     class NativeThreadProtocol;
     class Pipe;
+    class UnixSignals;
 
     // ---------------------------------------------------------------
     // SP/WP decls.
@@ -35,6 +36,7 @@ namespace lldb_private
     typedef std::shared_ptr<lldb_private::NativeRegisterContext> NativeRegisterContextSP;
     typedef std::shared_ptr<lldb_private::NativeThreadProtocol> NativeThreadProtocolSP;
     typedef std::shared_ptr<lldb_private::Pipe> PipeSP;
+    typedef std::shared_ptr<lldb_private::UnixSignals> UnixSignalsSP;
 }
 
 #endif // #if defined(__cplusplus)

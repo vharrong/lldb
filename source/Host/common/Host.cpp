@@ -2118,3 +2118,14 @@ Host::LaunchApplication (const FileSpec &app_file_spec)
 }
 
 #endif
+
+#if !defined (__linux__) && !defined (__FreeBSD__) && !defined (__NetBSD__)
+
+const lldb_private::UnixSignalsSP&
+Host::GetUnixSignals ()
+{
+    static UnixSignalsSP s_unix_signals_sp (new UnixSignals ());
+    return s_unix_signals_sp;
+}
+
+#endif

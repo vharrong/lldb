@@ -92,9 +92,6 @@ public:
     virtual void
     DidLaunch ();
 
-    lldb_private::UnixSignals&
-    GetUnixSignals () override;
-
     virtual lldb_private::Error
     WillAttachToProcessWithID (lldb::pid_t pid);
 
@@ -361,7 +358,6 @@ protected:
     bool m_destroy_tried_resuming;
     lldb::CommandObjectSP m_command_sp;
     int64_t m_breakpoint_pc_offset;
-    std::shared_ptr<lldb_private::UnixSignals> m_unix_signals_sp;
     lldb_private::PipeSP m_launch_sync_pipe_sp;
 
     bool

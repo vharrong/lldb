@@ -106,14 +106,8 @@ public:
     //------------------------------------------------------------------
     // Process Signals
     //------------------------------------------------------------------
-    virtual lldb_private::UnixSignals &
-    GetUnixSignals()
-    {
-        if (m_signals_sp)
-            return *m_signals_sp;
-        else
-            return Process::GetUnixSignals();
-    }
+    lldb_private::UnixSignals &
+    GetUnixSignals() override;
 
     //------------------------------------------------------------------
     // Process Memory

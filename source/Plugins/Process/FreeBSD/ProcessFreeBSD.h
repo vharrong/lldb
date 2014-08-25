@@ -18,7 +18,6 @@
 // Other libraries and framework includes
 #include "lldb/Target/Process.h"
 #include "lldb/Target/ThreadList.h"
-#include "Plugins/Process/Utility/FreeBSDSignals.h"
 #include "ProcessMessage.h"
 #include "ProcessPOSIX.h"
 
@@ -93,17 +92,11 @@ public:
     //------------------------------------------------------------------
     // Plugin process overrides
     //------------------------------------------------------------------
-    virtual lldb_private::UnixSignals &
-    GetUnixSignals()
-    {
-        return m_freebsd_signals;
-    }
+    lldb_private::UnixSignals &
+    GetUnixSignals() override;
 
 protected:
     friend class FreeBSDThread;
-
-    // FreeBSD-specific signal set.
-    FreeBSDSignals m_freebsd_signals;
 
     typedef std::vector<lldb::tid_t> tid_collection;
     tid_collection m_suspend_tids;

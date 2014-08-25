@@ -17,6 +17,7 @@
 #include <string>
 
 #include "lldb/lldb-private.h"
+#include "lldb/lldb-private-forward.h"
 #include "lldb/Core/StringList.h"
 #include "lldb/Host/File.h"
 #include "lldb/Host/FileSpec.h"
@@ -342,6 +343,9 @@ public:
     static Error
     LaunchProcessForkPipeExec (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t &pid);
 #endif
+
+    static const lldb_private::UnixSignalsSP&
+    GetUnixSignals ();
 
     static lldb::pid_t
     LaunchApplication (const FileSpec &app_file_spec);
