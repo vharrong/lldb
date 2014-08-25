@@ -457,9 +457,35 @@ PlatformLinux::GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info)
 {
     int32_t resume_count = 0;
 
-    // If we launch for debug, then we need to resume once past the PTRACE_TRACEME stop.
-    if (launch_info.GetFlags().Test(eLaunchFlagDebug))
+    // Always resume past the initial stop when we use eLaunchFlagDebug
+    if (launch_info.GetFlags ().Test (eLaunchFlagDebug))
+    {
+        // Resume past the stop for the final exec into the true inferior.
         ++resume_count;
+    }
+
+    // If we're not launching a shell, we're done.
+    const char *shell = launch_info.GetShell();
+    if (shell == NULL)
+        return resume_count;
+
+    // We're in a shell, so for sure we have to resume past the shell exec.
+    ++resume_count;
+
+    // Figure out what shell we're planning on using.
+    const char *shell_name = strrchr (shell, '/');
+    if (shell_name == NULL)
+        shell_name = shell;
+    else
+        shell_name++;
+
+    if (strcmp (shell_name, "csh") == 0
+             || strcmp (shell_name, "tcsh") == 0
+             || strcmp (shell_name, "zsh") == 0)
+    {
+        // These shells seem to re-exec themselves.  Add another resume.
+        ++resume_count;
+    }
 
     return resume_count;
 }

@@ -1005,7 +1005,11 @@ Error
 Platform::LaunchProcess (ProcessLaunchInfo &launch_info)
 {
     Error error;
-    // Take care of the host case so that each subclass can just 
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PLATFORM));
+    if (log)
+        log->Printf ("Platform::%s()", __FUNCTION__);
+
+    // Take care of the host case so that each subclass can just
     // call this function to get the host functionality.
     if (IsHost())
     {
@@ -1018,6 +1022,9 @@ Platform::LaunchProcess (ProcessLaunchInfo &launch_info)
             const bool will_debug = launch_info.GetFlags().Test(eLaunchFlagDebug);
             const bool first_arg_is_full_shell_command = false;
             uint32_t num_resumes = GetResumeCountForLaunchInfo (launch_info);
+            if (log)
+                log->Printf ("Platform::%s GetResumeCountForLaunchInfo() returned %" PRIu32, __FUNCTION__, num_resumes);
+
             if (!launch_info.ConvertArgumentsForLaunchingInShell (error,
                                                                   is_localhost,
                                                                   will_debug,
@@ -1025,6 +1032,9 @@ Platform::LaunchProcess (ProcessLaunchInfo &launch_info)
                                                                   num_resumes))
                 return error;
         }
+
+        if (log)
+            log->Printf ("Platform::%s final launch_info resume count: %" PRIu32, __FUNCTION__, launch_info.GetResumeCount ());
 
         error = Host::LaunchProcess (launch_info);
     }
