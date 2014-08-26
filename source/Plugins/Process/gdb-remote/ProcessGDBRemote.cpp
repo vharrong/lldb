@@ -1027,18 +1027,38 @@ ProcessGDBRemote::DidLaunchOrAttach (ArchSpec& process_arch)
         // prefer that over the Host information as it will be more specific
         // to our process.
 
-        if (m_gdb_comm.GetProcessArchitecture().IsValid())
-            process_arch = m_gdb_comm.GetProcessArchitecture();
+        const ArchSpec &remote_process_arch = m_gdb_comm.GetProcessArchitecture();
+        if (remote_process_arch.IsValid())
+        {
+            process_arch = remote_process_arch;
+            if (log)
+                log->Printf ("ProcessGDBRemote::%s gdb-remote had process architecture, using %s %s",
+                             __FUNCTION__,
+                             process_arch.GetArchitectureName () ? process_arch.GetArchitectureName () : "<null>",
+                             process_arch.GetTriple().getTriple ().c_str() ? process_arch.GetTriple().getTriple ().c_str() : "<null>");
+        }
         else
+        {
             process_arch = m_gdb_comm.GetHostArchitecture();
+            if (log)
+                log->Printf ("ProcessGDBRemote::%s gdb-remote did not have process architecture, using gdb-remote host architecture %s %s",
+                             __FUNCTION__,
+                             process_arch.GetArchitectureName () ? process_arch.GetArchitectureName () : "<null>",
+                             process_arch.GetTriple().getTriple ().c_str() ? process_arch.GetTriple().getTriple ().c_str() : "<null>");
+        }
 
         if (process_arch.IsValid())
         {
             ArchSpec &target_arch = GetTarget().GetArchitecture();
-
             if (target_arch.IsValid())
             {
-                // If the remote host is ARM and we have apple as the vendor, then 
+                if (log)
+                    log->Printf ("ProcessGDBRemote::%s analyzing target arch, currently %s %s",
+                                 __FUNCTION__,
+                                 target_arch.GetArchitectureName () ? target_arch.GetArchitectureName () : "<null>",
+                                 target_arch.GetTriple().getTriple ().c_str() ? target_arch.GetTriple().getTriple ().c_str() : "<null>");
+
+                // If the remote host is ARM and we have apple as the vendor, then
                 // ARM executables and shared libraries can have mixed ARM architectures.
                 // You can have an armv6 executable, and if the host is armv7, then the
                 // system will load the best possible architecture for all shared libraries
@@ -1049,6 +1069,11 @@ ProcessGDBRemote::DidLaunchOrAttach (ArchSpec& process_arch)
                     process_arch.GetTriple().getVendor() == llvm::Triple::Apple)
                 {
                     GetTarget().SetArchitecture (process_arch);
+                    if (log)
+                        log->Printf ("ProcessGDBRemote::%s remote process is ARM/Apple, setting target arch to %s %s",
+                                     __FUNCTION__,
+                                     process_arch.GetArchitectureName () ? process_arch.GetArchitectureName () : "<null>",
+                                     process_arch.GetTriple().getTriple ().c_str() ? process_arch.GetTriple().getTriple ().c_str() : "<null>");
                 }
                 else
                 {
@@ -1067,7 +1092,14 @@ ProcessGDBRemote::DidLaunchOrAttach (ArchSpec& process_arch)
                                 target_triple.setEnvironment (remote_triple.getEnvironment());
                         }
                     }
+
                 }
+
+                if (log)
+                    log->Printf ("ProcessGDBRemote::%s final target arch after adjustments for remote architecture: %s %s",
+                                 __FUNCTION__,
+                                 target_arch.GetArchitectureName () ? target_arch.GetArchitectureName () : "<null>",
+                                 target_arch.GetTriple().getTriple ().c_str() ? target_arch.GetTriple().getTriple ().c_str() : "<null>");
             }
             else
             {
