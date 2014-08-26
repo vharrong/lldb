@@ -17,6 +17,7 @@
 #include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Host/File.h"
 #include "lldb/Host/FileCache.h"
@@ -767,6 +768,7 @@ PlatformPOSIX::Attach (ProcessAttachInfo &attach_info,
                        Error &error)
 {
     lldb::ProcessSP process_sp;
+    Log *log(GetLogIfAnyCategoriesSet(LIBLLDB_LOG_PLATFORM));
 
     if (IsHost())
     {
@@ -781,13 +783,27 @@ PlatformPOSIX::Attach (ProcessAttachInfo &attach_info,
                                                            NULL,
                                                            new_target_sp);
             target = new_target_sp.get();
+            if (log)
+                log->Printf ("PlatformPOSIX::%s created new target", __FUNCTION__);
         }
         else
+        {
             error.Clear();
+            if (log)
+                log->Printf ("PlatformPOSIX::%s target already existed, setting target", __FUNCTION__);
+        }
 
         if (target && error.Success())
         {
             debugger.GetTargetList().SetSelectedTarget(target);
+            if (log)
+            {
+                ModuleSP exe_module_sp = target->GetExecutableModule ();
+                log->Printf ("PlatformPOSIX::%s set selected target to %p %s", __FUNCTION__,
+                             target,
+                             exe_module_sp ? exe_module_sp->GetFileSpec().GetPath().c_str () : "<null>" );
+            }
+
 
             process_sp = target->CreateProcess (listener, attach_info.GetProcessPluginName(), NULL);
 

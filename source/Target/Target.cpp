@@ -2332,7 +2332,11 @@ Error
 Target::Launch (Listener &listener, ProcessLaunchInfo &launch_info)
 {
     Error error;
-    
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TARGET));
+
+    if (log)
+        log->Printf ("Target::%s() called for %s", __FUNCTION__, launch_info.GetExecutableFile().GetPath().c_str ());
+
     StateType state = eStateInvalid;
     
     // Scope to temporarily get the process state in case someone has manually
@@ -2342,7 +2346,16 @@ Target::Launch (Listener &listener, ProcessLaunchInfo &launch_info)
         ProcessSP process_sp (GetProcessSP());
     
         if (process_sp)
+        {
             state = process_sp->GetState();
+            if (log)
+                log->Printf ("Target::%s the process exists, and its current state is %s", __FUNCTION__, StateAsCString (state));
+        }
+        else
+        {
+            if (log)
+                log->Printf ("Target::%s the process instance doesn't currently exist.", __FUNCTION__);
+        }
     }
 
     launch_info.GetFlags().Set (eLaunchFlagDebug);
@@ -2375,6 +2388,9 @@ Target::Launch (Listener &listener, ProcessLaunchInfo &launch_info)
     // If we're not already connected to the process, and if we have a platform that can launch a process for debugging, go ahead and do that here.
     if (state != eStateConnected && platform_sp && platform_sp->CanDebugProcess ())
     {
+        if (log)
+            log->Printf ("Target::%s asking the platform to debug the process", __FUNCTION__);
+
         m_process_sp = GetPlatform()->DebugProcess (launch_info,
                                                     debugger,
                                                     this,
@@ -2383,6 +2399,9 @@ Target::Launch (Listener &listener, ProcessLaunchInfo &launch_info)
     }
     else
     {
+        if (log)
+            log->Printf ("Target::%s the platform doesn't know how to debug a process, getting a process plugin to do this for us.", __FUNCTION__);
+
         if (state == eStateConnected)
         {
             assert(m_process_sp);
