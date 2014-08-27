@@ -3199,8 +3199,10 @@ Process::CompleteAttach ()
         if (log)
         {
             ModuleSP exe_module_sp = m_target.GetExecutableModule ();
-            const char *exe_module_path = exe_module_sp ? exe_module_sp->GetFileSpec().GetPath().c_str () : "<none>";
-            log->Printf ("Process::%s after DynamicLoader::DidAttach(), target executable is %s (using %s plugin)", __FUNCTION__, exe_module_path, dyld->GetPluginName().AsCString ("<unnamed>"));
+            log->Printf ("Process::%s after DynamicLoader::DidAttach(), target executable is %s (using %s plugin)",
+                         __FUNCTION__,
+                         exe_module_sp ? exe_module_sp->GetFileSpec().GetPath().c_str () : "<none>",
+                         dyld->GetPluginName().AsCString ("<unnamed>"));
         }
     }
 
@@ -3213,8 +3215,10 @@ Process::CompleteAttach ()
         if (log)
         {
             ModuleSP exe_module_sp = m_target.GetExecutableModule ();
-            const char *exe_module_path = exe_module_sp ? exe_module_sp->GetFileSpec().GetPath().c_str () : "<none>";
-            log->Printf ("Process::%s after SystemRuntime::DidAttach(), target executable is %s (using %s plugin)", __FUNCTION__, exe_module_path, system_runtime->GetPluginName().AsCString("<unnamed>"));
+            log->Printf ("Process::%s after SystemRuntime::DidAttach(), target executable is %s (using %s plugin)",
+                         __FUNCTION__,
+                         exe_module_sp ? exe_module_sp->GetFileSpec().GetPath().c_str () : "<none>",
+                         system_runtime->GetPluginName().AsCString("<unnamed>"));
         }
     }
 
@@ -3241,8 +3245,9 @@ Process::CompleteAttach ()
         if (log)
         {
             ModuleSP exe_module_sp = m_target.GetExecutableModule ();
-            const char *exe_module_path = exe_module_sp ? exe_module_sp->GetFileSpec().GetPath().c_str () : "<none>";
-            log->Printf ("Process::%s after looping through modules, target executable is %s", __FUNCTION__, exe_module_path);
+            log->Printf ("Process::%s after looping through modules, target executable is %s",
+                         __FUNCTION__,
+                         exe_module_sp ? exe_module_sp->GetFileSpec().GetPath().c_str () : "<none>");
         }
     }
 }
@@ -5938,6 +5943,10 @@ Process::Flush ()
 void
 Process::DidExec ()
 {
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    if (log)
+        log->Printf ("Process::%s()", __FUNCTION__);
+
     Target &target = GetTarget();
     target.CleanupProcess ();
     target.ClearModules(false);
