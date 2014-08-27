@@ -3136,13 +3136,26 @@ Process::Attach (ProcessAttachInfo &attach_info)
 void
 Process::CompleteAttach ()
 {
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    if (log)
+        log->Printf ("Process::%s()", __FUNCTION__);
+
     // Let the process subclass figure out at much as it can about the process
     // before we go looking for a dynamic loader plug-in.
     ArchSpec process_arch;
     DidAttach(process_arch);
     
     if (process_arch.IsValid())
+    {
         m_target.SetArchitecture(process_arch);
+        if (log)
+        {
+            const char *triple_str = process_arch.GetTriple().getTriple().c_str ();
+            log->Printf ("Process::%s replacing process architecture with DidAttach() architecture: %s",
+                         __FUNCTION__,
+                         triple_str ? triple_str : "<null>");
+        }
+    }
 
     // We just attached.  If we have a platform, ask it for the process architecture, and if it isn't
     // the same as the one we've already set, switch architectures.
@@ -3159,6 +3172,8 @@ Process::CompleteAttach ()
             {
                 m_target.SetPlatform (platform_sp);
                 m_target.SetArchitecture(platform_arch);
+                if (log)
+                    log->Printf ("Process::%s switching platform to %s and architecture to %s based on info from attach", __FUNCTION__, platform_sp->GetName().AsCString (""), platform_arch.GetTriple().getTriple().c_str ());
             }
         }
         else if (!process_arch.IsValid())
@@ -3167,7 +3182,11 @@ Process::CompleteAttach ()
             platform_sp->GetProcessInfo (GetID(), process_info);
             const ArchSpec &process_arch = process_info.GetArchitecture();
             if (process_arch.IsValid() && !m_target.GetArchitecture().IsExactMatch(process_arch))
+            {
                 m_target.SetArchitecture (process_arch);
+                if (log)
+                    log->Printf ("Process::%s switching architecture to %s based on info the platform retrieved for pid %" PRIu64, __FUNCTION__, process_arch.GetTriple().getTriple().c_str (), GetID ());
+            }
         }
     }
 
@@ -3175,13 +3194,29 @@ Process::CompleteAttach ()
     // plug-in
     DynamicLoader *dyld = GetDynamicLoader ();
     if (dyld)
+    {
         dyld->DidAttach();
+        if (log)
+        {
+            ModuleSP exe_module_sp = m_target.GetExecutableModule ();
+            const char *exe_module_path = exe_module_sp ? exe_module_sp->GetFileSpec().GetPath().c_str () : "<none>";
+            log->Printf ("Process::%s after DynamicLoader::DidAttach(), target executable is %s (using %s plugin)", __FUNCTION__, exe_module_path, dyld->GetPluginName().AsCString ("<unnamed>"));
+        }
+    }
 
     GetJITLoaders().DidAttach();
 
     SystemRuntime *system_runtime = GetSystemRuntime ();
     if (system_runtime)
+    {
         system_runtime->DidAttach();
+        if (log)
+        {
+            ModuleSP exe_module_sp = m_target.GetExecutableModule ();
+            const char *exe_module_path = exe_module_sp ? exe_module_sp->GetFileSpec().GetPath().c_str () : "<none>";
+            log->Printf ("Process::%s after SystemRuntime::DidAttach(), target executable is %s (using %s plugin)", __FUNCTION__, exe_module_path, system_runtime->GetPluginName().AsCString("<unnamed>"));
+        }
+    }
 
     m_os_ap.reset (OperatingSystem::FindPlugin (this, NULL));
     // Figure out which one is the executable, and set that in our target:
@@ -3201,7 +3236,15 @@ Process::CompleteAttach ()
         }
     }
     if (new_executable_module_sp)
+    {
         m_target.SetExecutableModule (new_executable_module_sp, false);
+        if (log)
+        {
+            ModuleSP exe_module_sp = m_target.GetExecutableModule ();
+            const char *exe_module_path = exe_module_sp ? exe_module_sp->GetFileSpec().GetPath().c_str () : "<none>";
+            log->Printf ("Process::%s after looping through modules, target executable is %s", __FUNCTION__, exe_module_path);
+        }
+    }
 }
 
 Error

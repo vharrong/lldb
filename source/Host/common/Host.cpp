@@ -1061,18 +1061,27 @@ Host::GetDummyTarget (lldb_private::Debugger &debugger)
 {
     static TargetSP g_dummy_target_sp;
 
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_TARGET));
+
     // FIXME: Maybe the dummy target should be per-Debugger
     if (!g_dummy_target_sp || !g_dummy_target_sp->IsValid())
     {
         ArchSpec arch(Target::GetDefaultArchitecture());
         if (!arch.IsValid())
             arch = HostInfo::GetArchitecture();
-        Error err = debugger.GetTargetList().CreateTarget(debugger, 
+        Error error = debugger.GetTargetList().CreateTarget(debugger,
                                                           NULL,
                                                           arch.GetTriple().getTriple().c_str(),
                                                           false, 
                                                           NULL, 
                                                           g_dummy_target_sp);
+        if (log)
+        {
+            if (error.Success ())
+                log->Printf ("Host::%s created dummy target %p SUCCESS", __FUNCTION__, g_dummy_target_sp.get ());
+            else
+                log->Printf ("Host::%s failed to create dummy target: %s", __FUNCTION__, error.AsCString ());
+        }
     }
 
     return g_dummy_target_sp;
