@@ -111,21 +111,48 @@ DynamicLoaderPOSIXDYLD::~DynamicLoaderPOSIXDYLD()
 void
 DynamicLoaderPOSIXDYLD::DidAttach()
 {
-    ModuleSP executable;
+    Log *log (GetLogIfAnyCategoriesSet(LIBLLDB_LOG_DYNAMIC_LOADER));
+    ModuleSP executable_sp;
     addr_t load_offset;
 
+    if (log)
+        log->Printf ("DynamicLoaderPOSIXDYLD::%s() pid %" PRIu64, __FUNCTION__, m_process ? m_process->GetID () : LLDB_INVALID_PROCESS_ID);
+
     m_auxv.reset(new AuxVector(m_process));
+    if (log)
+        log->Printf ("DynamicLoaderPOSIXDYLD::%s pid %" PRIu64 " reloaded auxv data", __FUNCTION__, m_process ? m_process->GetID () : LLDB_INVALID_PROCESS_ID);
 
-    executable = GetTargetExecutable();
+    executable_sp = GetTargetExecutable();
     load_offset = ComputeLoadOffset();
+    if (log)
+        log->Printf ("DynamicLoaderPOSIXDYLD::%s pid %" PRIu64 " executable '%s', load_offset 0x%" PRIx64, __FUNCTION__, m_process ? m_process->GetID () : LLDB_INVALID_PROCESS_ID, executable_sp ? executable_sp->GetFileSpec().GetPath().c_str () : "<null executable>", load_offset);
 
-    if (executable.get() && load_offset != LLDB_INVALID_ADDRESS)
+
+    if (executable_sp && load_offset != LLDB_INVALID_ADDRESS)
     {
         ModuleList module_list;
-        module_list.Append(executable);
-        UpdateLoadedSections(executable, LLDB_INVALID_ADDRESS, load_offset);
+
+        module_list.Append(executable_sp);
+        if (log)
+            log->Printf ("DynamicLoaderPOSIXDYLD::%s pid %" PRIu64 " added executable '%s' to module load list",
+                         __FUNCTION__,
+                         m_process ? m_process->GetID () : LLDB_INVALID_PROCESS_ID,
+                         executable_sp->GetFileSpec().GetPath().c_str ());
+
+        UpdateLoadedSections(executable_sp, LLDB_INVALID_ADDRESS, load_offset);
         LoadAllCurrentModules();
+
         m_process->GetTarget().ModulesDidLoad(module_list);
+        if (log)
+        {
+            log->Printf ("DynamicLoaderPOSIXDYLD::%s told the target about the modules that loaded:", __FUNCTION__);
+            for (auto module_sp : module_list.Modules ())
+            {
+                log->Printf ("-- [module] %s (pid %" PRIu64 ")",
+                             module_sp ? module_sp->GetFileSpec().GetPath().c_str () : "<null>",
+                             m_process ? m_process->GetID () : LLDB_INVALID_PROCESS_ID);
+            }
+        }
     }
 }
 
