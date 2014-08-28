@@ -369,7 +369,8 @@ Host::StartMonitoringChildProcess
 
     if (Host::MAX_THREAD_NAME_LENGTH <= 16)
     {
-        // some platforms, the threadname is limited to 16 characters, so need to be abbreviated
+        // On some platforms, the thread name is limited to 16 characters.  We need to
+        // abbreviate there or the pid info would get truncated.
         ::snprintf (thread_name, sizeof(thread_name), "wait4(%" PRIu64 ")", pid);
     }
     else
