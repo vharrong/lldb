@@ -2139,6 +2139,9 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
             }
         }
 
+        // Let our delegate know we have just exec'd.
+        NotifyDidExec ();
+
         // If we have a main thread, indicate we are stopped.
         assert (main_thread_sp && "exec called during ptraced process but no main thread metadata tracked");
         SetState (StateType::eStateStopped);
