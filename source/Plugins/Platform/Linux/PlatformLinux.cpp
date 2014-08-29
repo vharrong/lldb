@@ -30,6 +30,8 @@
 #include "lldb/Core/StreamString.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/HostInfo.h"
+#include "lldb/Interpreter/OptionValueProperties.h"
+#include "lldb/Interpreter/Property.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Process.h"
 
