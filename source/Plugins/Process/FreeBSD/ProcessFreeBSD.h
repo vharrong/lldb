@@ -89,12 +89,6 @@ public:
     EnablePluginLogging(lldb_private::Stream *strm,
                         lldb_private::Args &command);
 
-    //------------------------------------------------------------------
-    // Plugin process overrides
-    //------------------------------------------------------------------
-    lldb_private::UnixSignals &
-    GetUnixSignals() override;
-
 protected:
     friend class FreeBSDThread;
 

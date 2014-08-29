@@ -282,10 +282,3 @@ ProcessFreeBSD::SendMessage(const ProcessMessage &message)
 
     m_message_queue.push(message);
 }
-
-lldb_private::UnixSignals&
-ProcessFreeBSD::GetUnixSignals ()
-{
-    static const lldb_private::UnixSignalsSP s_unix_signals_sp (new FreeBSDSignals ());
-    return s_unix_signals_sp;
-}

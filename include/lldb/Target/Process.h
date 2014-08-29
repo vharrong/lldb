@@ -1350,7 +1350,7 @@ public:
         m_unix_signals_sp = signals_sp;
     }
 
-    virtual UnixSignals &
+    UnixSignals &
     GetUnixSignals ()
     {
         assert (m_unix_signals_sp && "null m_unix_signals_sp");
