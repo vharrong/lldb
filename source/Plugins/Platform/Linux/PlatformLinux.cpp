@@ -39,9 +39,6 @@
 #include "../../Process/Linux/NativeProcessLinux.h"
 #endif
 
-// Define this flag to use LLGS for local debugging rather than ProcessLinux/ProcessPOSIX and ProcessMonitor.
-#define LLDB_USE_LLGS_FOR_LOCAL_DEBUGGING
-
 using namespace lldb;
 using namespace lldb_private;
 
@@ -568,20 +565,29 @@ PlatformLinux::GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info)
     return resume_count;
 }
 
+bool
+PlatformLinux::UseLlgsForLocalDebugging ()
+{
+    PlatformLinuxPropertiesSP properties_sp = GetGlobalProperties ();
+    assert (properties_sp && "global properties shared pointer is null");
+    return properties_sp ? properties_sp->GetUseLlgsForLocal () : false;
+}
+
 // Linux processes can not be launched by spawning and attaching.
 bool
 PlatformLinux::CanDebugProcess ()
 {
-    // If we're the host, launch via normal host setup.
     if (IsHost ())
-#if defined (LLDB_USE_LLGS_FOR_LOCAL_DEBUGGING)
-        return true;
-#else
-        return false;
-#endif
-
-    // If we're connected, we can debug.
-    return IsConnected ();
+    {
+        // The platform only does local debugging (i.e. uses llgs) when the setting indicates we do that.
+        // Otherwise, we'll use ProcessLinux/ProcessPOSIX to handle with ProcessMonitor.
+        return UseLlgsForLocalDebugging ();
+    }
+    else
+    {
+        // If we're connected, we can debug.
+        return IsConnected ();
+    }
 }
 
 void

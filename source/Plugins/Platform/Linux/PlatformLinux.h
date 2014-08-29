@@ -109,6 +109,9 @@ namespace lldb_private {
                              lldb_private::NativeProcessProtocol::NativeDelegate &native_delegate,
                              NativeProcessProtocolSP &process_sp) override;
 
+        static bool
+        UseLlgsForLocalDebugging ();
+
     private:
         DISALLOW_COPY_AND_ASSIGN (PlatformLinux);
     };

@@ -21,6 +21,7 @@
 
 #include "ProcessLinux.h"
 #include "ProcessPOSIXLog.h"
+#include "Plugins/Platform/Linux/PlatformLinux.h"
 #include "Plugins/Process/Utility/InferiorCallPOSIX.h"
 #include "Plugins/Process/Utility/LinuxSignals.h"
 #include "ProcessMonitor.h"
@@ -28,9 +29,6 @@
 
 using namespace lldb;
 using namespace lldb_private;
-
-// Define the flag below if we want to use LLGS for local debugging.
-#define LLDB_USE_LLGS_FOR_LOCAL_DEBUGGING
 
 namespace
 {
@@ -232,10 +230,11 @@ ProcessLinux::CanDebug(Target &target, bool plugin_specified_by_name)
     if (m_core_file)
         return false;
 
-    // If we're using LLGS for local debugging, we don't use ProcessLinux/ProcessPOSIX for debugging.
-#if defined (LLDB_USE_LLGS_FOR_LOCAL_DEBUGGING)
-    return false;
-#else
+    // If we're using llgs for local debugging, we must not say that this process
+    // is used for debugging.
+    if (PlatformLinux::UseLlgsForLocalDebugging ())
+        return false;
+
     return ProcessPOSIX::CanDebug(target, plugin_specified_by_name);
-#endif
 }
+
