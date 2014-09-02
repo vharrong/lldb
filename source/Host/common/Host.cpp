@@ -103,232 +103,6 @@ extern "C"
 using namespace lldb;
 using namespace lldb_private;
 
-namespace
-{
-    // Support for launching in a suspended state, ready to ptrace, at the beginning of the program.
-#if defined (__APPLE__) || defined (__linux__) || defined (__FreeBSD__) || defined (__GLIBC__) || defined(__NetBSD__)
-    typedef int	(*SpawnFunction) (
-        ::pid_t *pid,
-        const char *path,
-        const posix_spawn_file_actions_t *file_actions,
-        const posix_spawnattr_t *attrp,
-        char *const argv[],
-        char *const envp[],
-        PipeSP &sync_pipe_sp);
-
-    int
-    SpawnForkPipeSync (
-        ::pid_t *pid,
-        const char *path,
-        const posix_spawn_file_actions_t *file_actions,
-        const posix_spawnattr_t *attrp,
-        char *const argv[],
-        char *const envp[],
-        PipeSP &sync_pipe_sp)
-    {
-        Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
-        Error error;
-
-        // We'll use a fork/exec style here.  First we'll fork, then have the parent return
-        // success.  The child will set itself up to exec, and will do a read on the sync_pipe_sp right
-        // before it execs.  It will block reading one character before it execs.
-
-        assert (!sync_pipe_sp && "pipe was already created");
-
-        sync_pipe_sp.reset (new Pipe ());
-        if (! sync_pipe_sp->Open ())
-        {
-            error.SetErrorToErrno();
-            if (log)
-                log->Printf ("%s: launch sync pipe open FAILED: %s", __FUNCTION__, error.AsCString ());
-            return -1;
-        }
-        else
-        {
-            if (log)
-                log->Printf ("%s: launch sync pipe open SUCCESS", __FUNCTION__);
-        }
-
-        if (log)
-            log->Printf ("%s: calling fork()", __FUNCTION__);
-
-        const ::pid_t fork_pid = fork ();
-        if (fork_pid == -1)
-        {
-            const int error_value = errno;
-            if (log)
-                log->Printf ("%s: fork() call failed: %s", __FUNCTION__, strerror (error_value));
-            return error_value;
-        }
-
-        if (fork_pid != 0)
-        {
-            // Parent.
-            if (log)
-                log->Printf ("%s: fork() call - parent returning after successful fork, child pid %" PRIu64, __FUNCTION__, static_cast<lldb::pid_t> (fork_pid));
-
-            // Close the read side of the pipe.
-            if (!sync_pipe_sp->CloseReadFileDescriptor ())
-            {
-                error.SetErrorToErrno ();
-                if (log)
-                    log->Printf ("%s: launch sync pipe close the read side in parent FAILED: %s", __FUNCTION__, error.AsCString ());
-                // Don't fail the launch because of this.
-            }
-            else
-            {
-                if (log)
-                    log->Printf ("%s: launch sync pipe close the read side in parent SUCCESS", __FUNCTION__);
-            }
-
-            *pid = fork_pid;
-            return 0;
-        }
-
-        // We're the child.
-        if (log)
-            log->Printf ("%s: child pid %" PRIu64 " initiating synchronized exec process", __FUNCTION__, static_cast<lldb::pid_t> (getpid()));
-
-        // Close the write side of the launch sync pipe.
-        if (!sync_pipe_sp->CloseWriteFileDescriptor ())
-        {
-            error.SetErrorToErrno ();
-            if (log)
-                log->Printf ("%s: launch sync pipe child close write side FAILED: %s", __FUNCTION__, error.AsCString ());
-            // Don't fail the launch because of this.
-        }
-        else
-        {
-            if (log)
-                log->Printf ("%s: launch sync pipe child close write side SUCCESS", __FUNCTION__);
-        }
-
-        // FIXME set up the launch environment here.
-
-        // For some more recent Linux kernels and distributions,
-        // we need to enable a process other than the parent -- i.e.
-        // llgs is not the parent of this launched inferior, but a
-        // sibling -- to ptrace via a prctl mechanism.
-#if defined (__linux__)
-#if defined (PR_SET_PTRACER)
-        // Attempt to set the permitted ptracer to our parent process (lldb, which we just
-        // forked off of) so that llgs, which will be a sibling, can ptrace us later.
-        const ::pid_t parent_pid = getppid();
-        const int prctl_result = prctl (PR_SET_PTRACER, static_cast<unsigned long>(parent_pid), 0, 0, 0);
-        if (prctl_result != 0)
-        {
-            error.SetErrorToErrno();
-            if (log)
-                log->Printf ("%s: prctl (PR_SET_PTRACER,%" PRIu64 ",...) FAILED (ignored): %s", __FUNCTION__, static_cast<uint64_t> (parent_pid), error.AsCString ());
-            // Don't bail here in case we're calling it on a system combo that doesn't need this.
-            // Ubuntu 10.10+ claims it needs it, even though the standard way to check for it in
-            // procfs is showing 0 (i.e. disabled) on stock systems.
-        }
-        else
-        {
-            if (log)
-                log->Printf ("%s: prctl (PR_SET_PTRACER,%" PRIu64 ",...) SUCCESS", __FUNCTION__, static_cast<uint64_t> (parent_pid));
-        }
-#else
-        if (log)
-            log->Printf ("%s: prctl (PR_SET_PTRACER,...) skipped because PR_SET_PTRACER is not defined", __FUNCTION__);
-#endif // #if defined (PR_SET_PTRACER)
-#endif // #if defined (__linux__)
-
-        // Now wait for a read of 1 byte on the launch sync pipe.
-        // Our parent (lldb) will send a byte here once we've been
-        // successfully attached to by the local llgs.  We need
-        // this synchronization to enable the launched inferior to
-        // be debugged from the start of the program.
-        // This is the child.  Wait now for something to PTRACE us.
-        uint8_t sync_byte;
-        if (!sync_pipe_sp->Read (&sync_byte, 1))
-        {
-            error.SetErrorToErrno();
-            if (log)
-                log->Printf ("%s: launch sync pipe read byte FAILED, canceling launch: %s", __FUNCTION__, error.AsCString ());
-            exit (-1);
-        }
-        else
-        {
-            if (log)
-                log->Printf ("%s: launch sync pipe read byte SUCCESS", __FUNCTION__);
-        }
-
-        // Close the read side of the pipe.
-        if (!sync_pipe_sp->CloseReadFileDescriptor())
-        {
-            error.SetErrorToErrno();
-            if (log)
-                log->Printf ("%s: launch sync pipe child close read side after sync FAILED: %s", __FUNCTION__, error.AsCString ());
-            // Don't fail the launch because of this.
-        }
-        else
-        {
-            if (log)
-                log->Printf ("%s: launch sync pipe child close read side after sync SUCCESS", __FUNCTION__);
-        }
-
-        // And now exec.
-        if (log)
-        {
-            log->Printf ("%s: calling execve('%s', argv, envp), argv/envp follows", __FUNCTION__, path ? path : "<null>");
-            if (argv)
-            {
-                for (int i = 0; argv[i] != nullptr; ++i)
-                    log->Printf ("-- argv[%d]: %s", i, argv[i]);
-            }
-            if (envp)
-            {
-                for (int i = 0; envp[i] != nullptr; ++i)
-                    log->Printf ("-- envp[%d]: %s", i, envp[i]);
-            }
-        }
-
-        const int exec_result = execve (path, argv, envp);
-
-        if (exec_result != 0)
-        {
-            const int exec_errno = errno;
-            if (log)
-                log->Printf ("%s: forked pid %" PRIu64 " failed to execve() with path '%s': %s\n", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), path ? path : "<null> path", strerror (exec_errno));
-        }
-        exit (-1);
-    }
-
-    int
-    SpawnPosixSpawnp (
-                       ::pid_t *pid,
-                       const char *path,
-                       const posix_spawn_file_actions_t *file_actions,
-                       const posix_spawnattr_t *attrp,
-                       char *const argv[],
-                       char *const envp[],
-                       PipeSP & /*sync_pipe_sp*/)
-    {
-        // Just call ::posix_spawnp and ignore the sync_pipe.
-        return ::posix_spawnp (pid, path, file_actions, attrp, argv, envp);
-    }
-
-    SpawnFunction
-    GetPosixspawnFunction (ProcessLaunchInfo &launch_info)
-    {
-#if defined (__APPLE__)
-        return SpawnPosixSpawnp;
-#else
-        if (launch_info.GetFlags().Test (eLaunchFlagDebug))
-        {
-            // We want to start the exe in a suspended state at the program execution
-            // start point.
-            return SpawnForkPipeSync;
-        }
-
-        return SpawnPosixSpawnp;
-#endif
-    }
-#endif
-}
-
 // Define maximum thread name length
 #if defined (__linux__) || defined (__FreeBSD__) || defined (__FreeBSD_kernel__) || defined (__NetBSD__)
 uint32_t const Host::MAX_THREAD_NAME_LENGTH = 16;
@@ -1238,7 +1012,6 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
 #endif
 
     short flags = GetPosixspawnFlags(launch_info);
-    SpawnFunction spawn_function_p = GetPosixspawnFunction (launch_info);
 
     error.SetError( ::posix_spawnattr_setflags (&attr, flags), eErrorTypePOSIX);
     if (error.Fail() || log)
@@ -1354,13 +1127,12 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
             }
         }
 
-        error.SetError ((*spawn_function_p) (&pid,
+        error.SetError (::posix_spawnp (&pid,
                                         exe_path,
                                         &file_actions,
                                         &attr,
                                         argv,
-                                        envp,
-                                        launch_info.GetLaunchSyncPipe ()),
+                                        envp),
                         eErrorTypePOSIX);
 
         if (error.Fail() || log)
@@ -1380,13 +1152,12 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
     }
     else
     {
-        error.SetError ((*spawn_function_p) (&pid,
+        error.SetError (::posix_spawnp (&pid,
                                         exe_path,
                                         NULL,
                                         &attr,
                                         argv,
-                                        envp,
-                                        launch_info.GetLaunchSyncPipe()),
+                                        envp),
                         eErrorTypePOSIX);
 
         if (error.Fail() || log)
@@ -1614,19 +1385,12 @@ Host::LaunchProcessForkPipeExec (const char *exe_path, ProcessLaunchInfo &launch
     // Set up the launch environment.
     //
 
-    // FIXME set up signals properly.
-#if 0
-    sigset_t no_signals;
-    sigset_t all_signals;
-    sigemptyset (&no_signals);
-    sigfillset (&all_signals);
-    ::posix_spawnattr_setsigmask(&attr, &no_signals);
-#if defined (__linux__)  || defined (__FreeBSD__)
-    ::posix_spawnattr_setsigdefault(&attr, &no_signals);
-#else
-    ::posix_spawnattr_setsigdefault(&attr, &all_signals);
-#endif
-#endif
+    // Reset all signals to default handlers that Driver.cpp touched.
+    signal (SIGPIPE,  SIG_DFL);
+    signal (SIGWINCH, SIG_DFL);
+    signal (SIGINT,   SIG_DFL);
+    signal (SIGTSTP,  SIG_DFL);
+    signal (SIGCONT,  SIG_DFL);
 
     // Setup args.
     const char *tmp_argv[2];
