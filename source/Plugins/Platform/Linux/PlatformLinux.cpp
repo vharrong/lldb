@@ -556,7 +556,8 @@ PlatformLinux::GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info)
 
     if (strcmp (shell_name, "csh") == 0
              || strcmp (shell_name, "tcsh") == 0
-             || strcmp (shell_name, "zsh") == 0)
+             || strcmp (shell_name, "zsh") == 0
+             || strcmp (shell_name, "sh") == 0)
     {
         // These shells seem to re-exec themselves.  Add another resume.
         ++resume_count;

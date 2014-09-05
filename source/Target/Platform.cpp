@@ -1023,7 +1023,10 @@ Platform::LaunchProcess (ProcessLaunchInfo &launch_info)
             const bool first_arg_is_full_shell_command = false;
             uint32_t num_resumes = GetResumeCountForLaunchInfo (launch_info);
             if (log)
-                log->Printf ("Platform::%s GetResumeCountForLaunchInfo() returned %" PRIu32, __FUNCTION__, num_resumes);
+                log->Printf ("Platform::%s GetResumeCountForLaunchInfo() returned %" PRIu32 ", shell is '%s'",
+                             __FUNCTION__,
+                             num_resumes,
+                             launch_info.GetShell () ? launch_info.GetShell () : "<null>");
 
             if (!launch_info.ConvertArgumentsForLaunchingInShell (error,
                                                                   is_localhost,
