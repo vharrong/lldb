@@ -573,7 +573,7 @@ PlatformLinux::UseLlgsForLocalDebugging ()
     PlatformLinuxPropertiesSP properties_sp = GetGlobalProperties ();
     assert (properties_sp && "global properties shared pointer is null");
     return properties_sp ? properties_sp->GetUseLlgsForLocal () : false;
-`1}
+}
 
 bool
 PlatformLinux::CanDebugProcess ()
