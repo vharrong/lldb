@@ -570,9 +570,13 @@ PlatformLinux::GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info)
 bool
 PlatformLinux::UseLlgsForLocalDebugging ()
 {
+#if 0
     PlatformLinuxPropertiesSP properties_sp = GetGlobalProperties ();
     assert (properties_sp && "global properties shared pointer is null");
     return properties_sp ? properties_sp->GetUseLlgsForLocal () : false;
+#else
+    return true;
+#endif
 }
 
 bool
@@ -686,6 +690,9 @@ PlatformLinux::DebugProcess (ProcessLaunchInfo &launch_info,
         if (log)
             log->Printf ("PlatformLinux::%s successfully created process", __FUNCTION__);
     }
+
+    // Set the unix signals properly.
+    process_sp->SetUnixSignals (Host::GetUnixSignals ());
 
     // Do the launch.
     error = process_sp->Launch(launch_info);
