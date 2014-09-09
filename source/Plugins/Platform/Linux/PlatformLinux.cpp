@@ -23,6 +23,7 @@
 // Project includes
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/ModuleSpec.h"
@@ -574,7 +575,6 @@ PlatformLinux::UseLlgsForLocalDebugging ()
     return properties_sp ? properties_sp->GetUseLlgsForLocal () : false;
 }
 
-// Linux processes can not be launched by spawning and attaching.
 bool
 PlatformLinux::CanDebugProcess ()
 {
@@ -591,11 +591,119 @@ PlatformLinux::CanDebugProcess ()
     }
 }
 
+// For local debugging, Linux will override the debug logic to use llgs-launch rather than
+// lldb-launch, llgs-attach.  This differs from current lldb-launch, debugserver-attach
+// approach on MacOSX.
+lldb::ProcessSP
+PlatformLinux::DebugProcess (ProcessLaunchInfo &launch_info,
+                        Debugger &debugger,
+                        Target *target,       // Can be NULL, if NULL create a new target, else use existing one
+                        Listener &listener,
+                        Error &error)
+{
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PLATFORM));
+    if (log)
+        log->Printf ("PlatformLinux::%s entered (target %p)", __FUNCTION__, static_cast<void*>(target));
+
+    // If we're a remote host, use standard behavior from parent class.
+    if (!IsHost ())
+        return PlatformPOSIX::DebugProcess (launch_info, debugger, target, listener, error);
+
+    //
+    // For local debugging, we'll insist on having ProcessGDBRemote create the process.
+    //
+
+    ProcessSP process_sp;
+
+    // Ensure we're using llgs for local debugging.
+    if (!UseLlgsForLocalDebugging ())
+    {
+        assert (false && "we're trying to debug a local process but platform.plugin.linux.use-llgs-for-local is false, should never get here");
+        error.SetErrorString ("attempted to start gdb-remote-based debugging for local process but platform.plugin.linux.use-llgs-for-local is false");
+        return process_sp;
+    }
+
+    // Make sure we stop at the entry point
+    launch_info.GetFlags ().Set (eLaunchFlagDebug);
+
+    // We always launch the process we are going to debug in a separate process
+    // group, since then we can handle ^C interrupts ourselves w/o having to worry
+    // about the target getting them as well.
+    launch_info.SetLaunchInSeparateProcessGroup(true);
+
+    // Ensure we have a target.
+    if (target == nullptr)
+    {
+        if (log)
+            log->Printf ("PlatformLinux::%s creating new target", __FUNCTION__);
+
+        TargetSP new_target_sp;
+        error = debugger.GetTargetList().CreateTarget (debugger,
+                                                       nullptr,
+                                                       nullptr,
+                                                       false,
+                                                       nullptr,
+                                                       new_target_sp);
+        if (error.Fail ())
+        {
+            if (log)
+                log->Printf ("PlatformLinux::%s failed to create new target: %s", __FUNCTION__, error.AsCString ());
+            return process_sp;
+        }
+
+        target = new_target_sp.get();
+        if (!target)
+        {
+            error.SetErrorString ("CreateTarget() returned nullptr");
+            if (log)
+                log->Printf ("PlatformLinux::%s failed: %s", __FUNCTION__, error.AsCString ());
+            return process_sp;
+        }
+    }
+    else
+    {
+        if (log)
+            log->Printf ("PlatformLinux::%s using provided target", __FUNCTION__);
+    }
+
+    // Mark target as currently selected target.
+    debugger.GetTargetList().SetSelectedTarget(target);
+
+    // Now create the gdb-remote process.
+    if (log)
+        log->Printf ("PlatformLinux::%s having target create process with gdb-remote plugin", __FUNCTION__);
+    process_sp = target->CreateProcess (listener, "gdb-remote", nullptr);
+
+    if (!process_sp)
+    {
+        error.SetErrorString ("CreateProcess() failed for gdb-remote process");
+        if (log)
+            log->Printf ("PlatformLinux::%s failed: %s", __FUNCTION__, error.AsCString ());
+        return process_sp;
+    }
+    else
+    {
+        if (log)
+            log->Printf ("PlatformLinux::%s successfully created process", __FUNCTION__);
+    }
+
+    // Do the launch.
+    error = process_sp->Launch(launch_info);
+    if (error.Fail ())
+    {
+        if (log)
+            log->Printf ("PlatformLinux::%s process launch failed: %s", __FUNCTION__, error.AsCString ());
+        // FIXME figure out appropriate cleanup here.  Do we delete the target? Do we delete the process?  Does our caller do that?
+    }
+
+    return process_sp;
+}
+
 void
 PlatformLinux::CalculateTrapHandlerSymbolNames ()
-{   
+{
     m_trap_handlers.push_back (ConstString ("_sigtramp"));
-}   
+}
 
 Error
 PlatformLinux::LaunchNativeProcess (

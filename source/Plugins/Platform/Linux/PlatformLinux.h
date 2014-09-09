@@ -95,6 +95,13 @@ namespace lldb_private {
         bool
         CanDebugProcess () override;
 
+        lldb::ProcessSP
+        DebugProcess (ProcessLaunchInfo &launch_info,
+                      Debugger &debugger,
+                      Target *target,
+                      Listener &listener,
+                      Error &error) override;
+
         void
         CalculateTrapHandlerSymbolNames () override;
 
