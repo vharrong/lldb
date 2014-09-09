@@ -49,18 +49,29 @@ static uint32_t g_initialize_count = 0;
 /// Code to handle the PlatformLinux settings
 //------------------------------------------------------------------
 
-static PropertyDefinition
-g_properties[] =
+namespace
 {
-    { "use-llgs-for-local" , OptionValue::eTypeBoolean, true, false, NULL, NULL, "Control whether the platform uses llgs for local debug sessions." },
-    {  NULL        , OptionValue::eTypeInvalid, false, 0  , NULL, NULL, NULL  }
-};
+    enum {
+        ePropertyUseLlgsForLocal = 0,
+    };
 
-enum {
-    ePropertyUseLlgsForLocal = 0,
-};
+    const PropertyDefinition*
+    GetStaticPropertyDefinitions ()
+    {
+        static PropertyDefinition
+        g_properties[] =
+        {
+            { "use-llgs-for-local" , OptionValue::eTypeBoolean, true, false, NULL, NULL, "Control whether the platform uses llgs for local debug sessions." },
+            {  NULL        , OptionValue::eTypeInvalid, false, 0  , NULL, NULL, NULL  }
+        };
 
+        // Allow environment variable to force using llgs-local.
+        if (getenv("PLATFORM_LINUX_FORCE_LLGS_LOCAL"))
+            g_properties[ePropertyUseLlgsForLocal].default_uint_value = true;
 
+        return g_properties;
+    }
+}
 
 class PlatformLinuxProperties : public Properties
 {
@@ -76,8 +87,8 @@ public:
     PlatformLinuxProperties() :
     Properties ()
     {
-        m_collection_sp.reset (new OptionValueProperties(GetSettingName()));
-        m_collection_sp->Initialize(g_properties);
+        m_collection_sp.reset (new OptionValueProperties(GetSettingName ()));
+        m_collection_sp->Initialize (GetStaticPropertyDefinitions ());
     }
 
     virtual
@@ -89,7 +100,7 @@ public:
     GetUseLlgsForLocal() const
     {
         const uint32_t idx = ePropertyUseLlgsForLocal;
-        return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+        return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, GetStaticPropertyDefinitions()[idx].default_uint_value != 0);
     }
 };
 
