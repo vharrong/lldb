@@ -287,8 +287,7 @@ ProcessGDBRemote::ProcessGDBRemote(Target& target, Listener &listener) :
     m_waiting_for_attach (false),
     m_destroy_tried_resuming (false),
     m_command_sp (),
-    m_breakpoint_pc_offset (0),
-    m_launch_sync_pipe_sp ()
+    m_breakpoint_pc_offset (0)
 {
     m_async_broadcaster.SetEventName (eBroadcastBitAsyncThreadShouldExit,   "async thread should exit");
     m_async_broadcaster.SetEventName (eBroadcastBitAsyncContinue,           "async thread continue");
@@ -1156,20 +1155,6 @@ ProcessGDBRemote::DoAttachToProcessWithID (lldb::pid_t attach_pid, const Process
         if (error.Success())
         {
             m_gdb_comm.SetDetachOnError(attach_info.GetDetachOnError());
-
-            // Keep track of the launch sync pipe - for launched processes that need it, we send it a byte
-            // once we're attached successfully.
-            m_launch_sync_pipe_sp = attach_info.GetLaunchSyncPipe();
-            if (m_launch_sync_pipe_sp)
-            {
-                if (log)
-                    log->Printf ("ProcessGDBRemote::%s launch sync pipe provided", __FUNCTION__);
-            }
-            else
-            {
-                if (log)
-                    log->Printf ("ProcessGDBRemote::%s launch sync pipe not used", __FUNCTION__);
-            }
 
             char packet[64];
             const int packet_len = ::snprintf (packet, sizeof(packet), "vAttach;%" PRIx64, attach_pid);
@@ -3045,55 +3030,10 @@ ProcessGDBRemote::AsyncThread (void *arg)
                                     if (log)
                                         log->Printf ("ProcessGDBRemote::%s (arg = %p, pid = %" PRIu64 ") got eBroadcastBitAsyncContinue: %s", __FUNCTION__, arg, process->GetID(), continue_cstr);
 
-                                    const bool is_vAttach = ::strstr (continue_cstr, "vAttach") != nullptr;
-                                    if (!is_vAttach)
+                                    if (::strstr (continue_cstr, "vAttach") == NULL)
                                         process->SetPrivateState(eStateRunning);
                                     StringExtractorGDBRemote response;
                                     StateType stop_state = process->GetGDBRemote().SendContinuePacketAndWaitForResponse (process, continue_cstr, continue_cstr_len, response);
-
-                                    if (is_vAttach)
-                                    {
-                                        if (process->m_launch_sync_pipe_sp)
-                                        {
-                                            if (log)
-                                                log->Printf ("ProcessGDBRemote::%s launch sync pipe about to write", __FUNCTION__);
-                                            // If this process launch info has a launch sync pipe, we need to write a byte to it here
-                                            // so that the process execs the inferior.
-                                            const uint8_t launch_sync_byte = static_cast<uint8_t> (stop_state);
-                                            if (process->m_launch_sync_pipe_sp->Write (&launch_sync_byte, 1) != 1)
-                                            {
-                                                if (log)
-                                                    log->Printf ("ProcessGDBRemote::%s launch sync pipe write sync byte FAILED", __FUNCTION__);
-                                            }
-                                            else
-                                            {
-                                                if (log)
-                                                    log->Printf ("ProcessGDBRemote::%s launch sync pipe byte write sync byte SUCCESS", __FUNCTION__);
-                                            }
-
-                                            // Close the pipe.
-                                            if (!process->m_launch_sync_pipe_sp->CloseWriteFileDescriptor ())
-                                            {
-                                                Error error;
-                                                error.SetErrorToErrno ();
-                                                if (log)
-                                                    log->Printf ("ProcessGDBRemote::%s launch sync pipe close after write FAILED: %s", __FUNCTION__, error.AsCString ());
-                                            }
-                                            else
-                                            {
-                                                if (log)
-                                                    log->Printf ("ProcessGDBRemote::%s launch sync pipe close after write SUCCESS", __FUNCTION__);
-                                            }
-
-                                            // Delete the pipe so we don't keep trying to use it.
-                                            process->m_launch_sync_pipe_sp.reset ();
-                                        }
-                                        else
-                                        {
-                                            if (log)
-                                                log->Printf ("ProcessGDBRemote::%s launch sync pipe not used during vAttach handling", __FUNCTION__);
-                                        }
-                                    }
 
                                     // We need to immediately clear the thread ID list so we are sure to get a valid list of threads.
                                     // The thread ID list might be contained within the "response", or the stop reply packet that

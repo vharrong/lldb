@@ -358,7 +358,6 @@ protected:
     bool m_destroy_tried_resuming;
     lldb::CommandObjectSP m_command_sp;
     int64_t m_breakpoint_pc_offset;
-    lldb_private::PipeSP m_launch_sync_pipe_sp;
 
     bool
     StartAsyncThread ();

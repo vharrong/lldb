@@ -36,8 +36,7 @@ ProcessLaunchInfo::ProcessLaunchInfo () :
     m_monitor_callback (NULL),
     m_monitor_callback_baton (NULL),
     m_monitor_signals (false),
-    m_hijack_listener_sp (),
-    m_launch_sync_pipe_sp ()
+    m_hijack_listener_sp ()
 {
 }
 
@@ -55,7 +54,6 @@ ProcessLaunchInfo::ProcessLaunchInfo(const char *stdin_path, const char *stdout_
     , m_monitor_callback_baton(NULL)
     , m_monitor_signals(false)
     , m_hijack_listener_sp()
-    , m_launch_sync_pipe_sp ()
 {
     if (stdin_path)
     {

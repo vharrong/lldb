@@ -3109,10 +3109,6 @@ Process::Attach (ProcessAttachInfo &attach_info)
                 const bool restarted = false;
                 SetPublicState (eStateAttaching, restarted);
                 error = DoAttachToProcessWithID (attach_pid, attach_info);
-
-                // Ensure the launch sync pipe is cleared out.
-                attach_info.GetLaunchSyncPipe().reset ();
-
             }
             else
             {

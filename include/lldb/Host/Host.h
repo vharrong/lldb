@@ -339,11 +339,6 @@ public:
     static bool AddPosixSpawnFileAction(void *file_actions, const FileAction *info, Log *log, Error &error);
 #endif
 
-#if defined (__linux__) || defined (__FreeBSD__) || defined (__GLIBC__) || defined (__NetBSD__)
-    static Error
-    LaunchProcessForkPipeExec (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t &pid);
-#endif
-
     static const lldb_private::UnixSignalsSP&
     GetUnixSignals ();
 

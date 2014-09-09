@@ -2435,10 +2435,8 @@ Target::Launch (Listener &listener, ProcessLaunchInfo &launch_info)
         if (launch_info.GetFlags().Test(eLaunchFlagStopAtEntry) == false)
         {
             ListenerSP hijack_listener_sp (launch_info.GetHijackListener());
-            
-            TimeValue timeout (TimeValue::Now());
-            timeout.OffsetWithSeconds(5);
-            StateType state = m_process_sp->WaitForProcessToStop (&timeout, NULL, false, hijack_listener_sp.get());
+
+            StateType state = m_process_sp->WaitForProcessToStop (NULL, NULL, false, hijack_listener_sp.get());
             
             if (state == eStateStopped)
             {

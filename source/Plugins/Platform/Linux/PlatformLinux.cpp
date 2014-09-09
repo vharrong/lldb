@@ -21,9 +21,9 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Core/Debugger.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Log.h"
-#include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/ModuleSpec.h"
@@ -570,14 +570,10 @@ PlatformLinux::GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info)
 bool
 PlatformLinux::UseLlgsForLocalDebugging ()
 {
-#if 0
     PlatformLinuxPropertiesSP properties_sp = GetGlobalProperties ();
     assert (properties_sp && "global properties shared pointer is null");
     return properties_sp ? properties_sp->GetUseLlgsForLocal () : false;
-#else
-    return true;
-#endif
-}
+`1}
 
 bool
 PlatformLinux::CanDebugProcess ()

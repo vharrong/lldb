@@ -40,14 +40,8 @@
 
 #if defined (__linux__) || defined (__FreeBSD__) || defined (__FreeBSD_kernel__) || defined (__APPLE__) || defined(__NetBSD__)
 #include <spawn.h>
-#include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/syscall.h>
-#endif
-
-#if defined (__linux__)
-#include <sys/prctl.h>
-#include <linux/prctl.h>
 #endif
 
 #if defined (__FreeBSD__)
@@ -56,7 +50,6 @@
 
 // C++ includes
 #include <limits>
-#include <utility>
 
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
@@ -73,7 +66,6 @@
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Mutex.h"
-#include "lldb/Host/Pipe.h"
 #include "lldb/lldb-private-forward.h"
 #include "lldb/Target/FileAction.h"
 #include "lldb/Target/Process.h"
@@ -712,27 +704,18 @@ Host::GetDummyTarget (lldb_private::Debugger &debugger)
 {
     static TargetSP g_dummy_target_sp;
 
-    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_TARGET));
-
     // FIXME: Maybe the dummy target should be per-Debugger
     if (!g_dummy_target_sp || !g_dummy_target_sp->IsValid())
     {
         ArchSpec arch(Target::GetDefaultArchitecture());
         if (!arch.IsValid())
             arch = HostInfo::GetArchitecture();
-        Error error = debugger.GetTargetList().CreateTarget(debugger,
+        Error err = debugger.GetTargetList().CreateTarget(debugger, 
                                                           NULL,
                                                           arch.GetTriple().getTriple().c_str(),
                                                           false, 
                                                           NULL, 
                                                           g_dummy_target_sp);
-        if (log)
-        {
-            if (error.Success ())
-                log->Printf ("Host::%s created dummy target %p SUCCESS", __FUNCTION__, g_dummy_target_sp.get ());
-            else
-                log->Printf ("Host::%s failed to create dummy target: %s", __FUNCTION__, error.AsCString ());
-        }
     }
 
     return g_dummy_target_sp;
@@ -1261,371 +1244,6 @@ Host::AddPosixSpawnFileAction(void *_file_actions, const FileAction *info, Log *
 
 #endif // LaunchProcedssPosixSpawn: Apple, Linux, FreeBSD and other GLIBC systems
 
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__GLIBC__) || defined(__NetBSD__)
-
-static const char *
-FileActionAsCString (FileAction::Action action)
-{
-    switch (action)
-    {
-        case FileAction::eFileActionNone:
-            return "eFileActionNone";
-        case FileAction::eFileActionClose:
-            return "eFileActionClose";
-        case FileAction::eFileActionDuplicate:
-            return "eFileActionDuplicate";
-        case FileAction::eFileActionOpen:
-            return "eFileActionOpen";
-    }
-    return "<unknown>";
-}
-
-static void
-DuplicateFilePOSIX (int old_fd, int new_fd)
-{
-    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
-
-    if (dup2(old_fd, new_fd) == -1)
-    {
-        if (log)
-        {
-            Error error;
-            error.SetErrorToErrno ();
-            log->Printf ("Host::%s pid %" PRIu64 " failed to dup2 old fd %d to new fd %d: %s", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), old_fd, new_fd, error.AsCString ());
-        }
-    }
-    else
-    {
-        if (log)
-            log->Printf ("Host::%s pid %" PRIu64 " duplicate pid (old_fd=%d, new_fd=%d): SUCCESS", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), old_fd, new_fd);
-    }
-}
-
-Error
-Host::LaunchProcessForkPipeExec (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t &pid)
-{
-    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
-    Error error;
-
-    // We'll use a fork/exec style here.  First we'll fork, then have the parent return
-    // success.  The child will set itself up to exec, and will do a read on the sync_pipe_sp right
-    // before it execs.  It will block reading one character before it execs.
-    PipeSP &sync_pipe_sp = launch_info.GetLaunchSyncPipe ();
-    assert (!sync_pipe_sp && "pipe was already created");
-
-    sync_pipe_sp.reset (new Pipe ());
-    if (! sync_pipe_sp->Open ())
-    {
-        error.SetErrorToErrno();
-        if (log)
-            log->Printf ("Host::%s: launch sync pipe open FAILED: %s", __FUNCTION__, error.AsCString ());
-        return error;
-    }
-    else
-    {
-        if (log)
-            log->Printf ("Host::%s: launch sync pipe open SUCCESS", __FUNCTION__);
-    }
-
-    if (log)
-        log->Printf ("Host::%s: calling fork()", __FUNCTION__);
-
-    const ::pid_t fork_pid = fork ();
-    if (fork_pid == -1)
-    {
-        error.SetErrorToErrno();
-        if (log)
-            log->Printf ("Host::%s: fork() call failed: %s", __FUNCTION__, error.AsCString ());
-        return error;
-    }
-
-    if (fork_pid != 0)
-    {
-        // Parent.
-        if (log)
-            log->Printf ("Host::%s: fork() call - parent returning after successful fork, child pid %" PRIu64, __FUNCTION__, static_cast<lldb::pid_t> (fork_pid));
-
-        // Close the read side of the pipe.
-        if (!sync_pipe_sp->CloseReadFileDescriptor ())
-        {
-            error.SetErrorToErrno ();
-            if (log)
-                log->Printf ("Host::%s: launch sync pipe close the read side in parent FAILED: %s", __FUNCTION__, error.AsCString ());
-            // Don't fail the launch because of this.
-        }
-        else
-        {
-            if (log)
-                log->Printf ("Host::%s: launch sync pipe close the read side in parent SUCCESS", __FUNCTION__);
-        }
-
-        pid = fork_pid;
-        return error;
-    }
-
-    // We're the child.
-    if (log)
-        log->Printf ("Host::%s: child pid %" PRIu64 " initiating synchronized exec process", __FUNCTION__, static_cast<lldb::pid_t> (getpid()));
-
-    // Close the write side of the launch sync pipe.
-    if (!sync_pipe_sp->CloseWriteFileDescriptor ())
-    {
-        error.SetErrorToErrno ();
-        if (log)
-            log->Printf ("Host::%s: launch sync pipe child close write side FAILED: %s", __FUNCTION__, error.AsCString ());
-        // Don't fail the launch because of this.
-    }
-    else
-    {
-        if (log)
-            log->Printf ("Host::%s: launch sync pipe child close write side SUCCESS", __FUNCTION__);
-    }
-
-    //
-    // Set up the launch environment.
-    //
-
-    // Reset all signals to default handlers that Driver.cpp touched.
-    signal (SIGPIPE,  SIG_DFL);
-    signal (SIGWINCH, SIG_DFL);
-    signal (SIGINT,   SIG_DFL);
-    signal (SIGTSTP,  SIG_DFL);
-    signal (SIGCONT,  SIG_DFL);
-
-    // Setup args.
-    const char *tmp_argv[2];
-    char * const *argv = (char * const*)launch_info.GetArguments ().GetConstArgumentVector ();
-    if (argv == NULL)
-    {
-        // posix_spawn gets very unhappy if it doesn't have at least the program
-        // name in argv[0]. One of the side affects I have noticed is the environment
-        // variables don't make it into the child process if "argv == NULL"!!!
-        tmp_argv[0] = exe_path;
-        tmp_argv[1] = NULL;
-        argv = (char * const*)tmp_argv;
-    }
-
-    // Setup envp.
-    char * const *envp = (char * const*)launch_info.GetEnvironmentEntries ().GetConstArgumentVector ();
-
-    // Working directory.
-    // Change the working directory as needed.  This is fine to do, we're in the child forked process and will never come back.
-    const char *const working_dir = launch_info.GetWorkingDirectory();
-    if (working_dir)
-    {
-        if (::chdir (working_dir) == -1)
-        {
-            error.SetErrorToErrno ();
-            if (log)
-            {
-                char current_dir[PATH_MAX];
-                current_dir[0] = '\0';
-                ::getcwd (current_dir, sizeof(current_dir));
-
-                log->Printf ("Host::%s forked child %" PRIu64 " failed to change working directory to '%s', continuing with current directory '%s'", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), working_dir, current_dir);
-            }
-            // There is no meaningful way to abort at this point. Just continue without changing the working dir. Noted in the log message.
-        }
-        else
-        {
-            if (log)
-                log->Printf ("Host::%s forked child pid %" PRIu64 " changed working directory to '%s'", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), working_dir);
-        }
-    }
-    else
-    {
-        if (log)
-        {
-            char current_dir[PATH_MAX];
-            current_dir[0] = '\0';
-            ::getcwd (current_dir, sizeof(current_dir));
-
-            log->Printf ("Host::%s forked child pid %" PRIu64 " using same working directory as parent: '%s'", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), current_dir);
-        }
-    }
-
-    // File actions.
-    for (size_t i = 0; i < launch_info.GetNumFileActions (); ++i)
-    {
-        const FileAction *action = launch_info.GetFileActionAtIndex(i);
-        if (action)
-        {
-            if (log)
-                log->Printf ("Host::%s forked child pid %" PRIu64 " handling file action %s (%d) - fd %d, arg %d, path '%s'", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), FileActionAsCString (action->GetAction ()), action->GetAction (), action->GetFD (), action->GetActionArgument (), action->GetPath () ? action->GetPath () : "<null>");
-
-            switch (action->GetAction ())
-            {
-            case FileAction::eFileActionNone:
-                // Nothing to do.
-                break;
-
-            case FileAction::eFileActionClose:
-                if (close (action->GetFD ()) != 0)
-                {
-                    if (log)
-                    {
-                        error.SetErrorToErrno ();
-                        log->Printf ("Host::%s forked child failed to close fd %d: %s", __FUNCTION__, action->GetFD (), error.AsCString ());
-                    }
-                }
-                else
-                {
-                    if (log)
-                        log->Printf ("Host::%s forked child pid %" PRIu64 " close fd %d: SUCCESS", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), action->GetFD ());
-
-                }
-                break;
-
-            case FileAction::eFileActionDuplicate:
-                DuplicateFilePOSIX (action->GetFD (), action->GetActionArgument ());
-                break;
-
-            case FileAction::eFileActionOpen:
-                {
-                    assert (action->GetPath () && "launch_info file open action with no path");
-
-                    // Open the file specified.
-                    const int new_fd = action->GetFD ();
-                    assert (new_fd > -1 && "invalid file descriptor specified");
-                    if (new_fd <= -1)
-                    {
-                        if (log)
-                            log->Printf ("Host::%s invalid file descriptor specified for file action: %d", __FUNCTION__, new_fd);
-
-                        // FIXME do error checking before the fork, so we can meaningfully report back to the caller.  This is too late to be catching this, we've already forked.
-                        // For now, just kill the forked child.
-                        exit (-1);
-                    }
-
-                    // The open() mode arg is ignored unless we do a create.
-                    const int open_flags = action->GetActionArgument ();
-                    const mode_t mode = (open_flags & O_CREAT) ? 0640 : 0;
-
-                    const int opened_fd = open(action->GetPath (), open_flags, mode);
-                    if (opened_fd == -1)
-                    {
-                        error.SetErrorToErrno ();
-                        if (log)
-                            log->Printf ("Host::%s forked child failed to open file '%s': %s", __FUNCTION__, action->GetPath (), error.AsCString ());
-                    }
-                    else
-                    {
-                        if (dup2 (opened_fd, new_fd) == -1)
-                        {
-                            error.SetErrorToErrno ();
-                            if (log)
-                                log->Printf ("Host::%s forked child failed to dup2 file '%s' (fd %d) to new fd %d: %s", __FUNCTION__, action->GetPath (), opened_fd, action->GetFD (), error.AsCString ());
-                        }
-                        else
-                        {
-                            if (log)
-                                log->Printf ("Host::%s forked child pid %" PRIu64 " open file (new_fd=%d, path='%s'): SUCCESS", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), action->GetFD (), action->GetPath ());
-                        }
-                    }
-                }
-                break;
-            }
-        }
-    }
-
-
-    // For some more recent Linux kernels and distributions,
-    // we need to enable a process other than the parent -- i.e.
-    // llgs is not the parent of this launched inferior, but a
-    // sibling -- to ptrace via a prctl mechanism.
-#if defined (__linux__)
-#if defined (PR_SET_PTRACER)
-    // Attempt to set the permitted ptracer to our parent process (lldb, which we just
-    // forked off of) so that llgs, which will be a sibling, can ptrace us later.
-    const ::pid_t parent_pid = getppid();
-    const int prctl_result = prctl (PR_SET_PTRACER, static_cast<unsigned long>(parent_pid), 0, 0, 0);
-    if (prctl_result != 0)
-    {
-        error.SetErrorToErrno();
-        if (log)
-            log->Printf ("Host::%s: prctl (PR_SET_PTRACER,%" PRIu64 ",...) FAILED (ignored): %s", __FUNCTION__, static_cast<uint64_t> (parent_pid), error.AsCString ());
-        // Don't bail here in case we're calling it on a system combo that doesn't need this.
-        // Ubuntu 10.10+ claims it needs it, even though the standard way to check for it in
-        // procfs is showing 0 (i.e. disabled) on stock systems.
-    }
-    else
-    {
-        if (log)
-            log->Printf ("Host::%s: prctl (PR_SET_PTRACER,%" PRIu64 ",...) SUCCESS", __FUNCTION__, static_cast<uint64_t> (parent_pid));
-    }
-#else
-    if (log)
-        log->Printf ("Host::%s: prctl (PR_SET_PTRACER,...) skipped because PR_SET_PTRACER is not defined", __FUNCTION__);
-#endif // #if defined (PR_SET_PTRACER)
-#endif // #if defined (__linux__)
-
-    // Sync with llgs/attacher via pipe.
-
-    // Now wait for a read of 1 byte on the launch sync pipe.
-    // Our parent (lldb) will send a byte here once we've been
-    // successfully attached to by the local llgs.  We need
-    // this synchronization to enable the launched inferior to
-    // be debugged from the start of the program.
-    // This is the child.  Wait now for something to PTRACE us.
-    uint8_t sync_byte;
-    if (!sync_pipe_sp->Read (&sync_byte, 1))
-    {
-        error.SetErrorToErrno();
-        if (log)
-            log->Printf ("Host::%s: launch sync pipe read byte FAILED, canceling launch: %s", __FUNCTION__, error.AsCString ());
-        exit (-1);
-    }
-    else
-    {
-        if (log)
-            log->Printf ("Host::%s: launch sync pipe read byte SUCCESS", __FUNCTION__);
-    }
-
-    // Close the read side of the pipe.
-    if (!sync_pipe_sp->CloseReadFileDescriptor())
-    {
-        error.SetErrorToErrno();
-        if (log)
-            log->Printf ("Host::%s: launch sync pipe child close read side after sync FAILED: %s", __FUNCTION__, error.AsCString ());
-        // Don't fail the launch because of this.
-    }
-    else
-    {
-        if (log)
-            log->Printf ("Host::%s: launch sync pipe child close read side after sync SUCCESS", __FUNCTION__);
-    }
-
-    //
-    // Exec.
-    //
-    if (log)
-    {
-        log->Printf ("Host::%s: calling execve('%s', argv, envp), argv/envp follows", __FUNCTION__, exe_path ? exe_path : "<null>");
-        if (argv)
-        {
-            for (int i = 0; argv[i] != nullptr; ++i)
-                log->Printf ("-- argv[%d]: %s", i, argv[i]);
-        }
-        if (envp)
-        {
-            for (int i = 0; envp[i] != nullptr; ++i)
-                log->Printf ("-- envp[%d]: %s", i, envp[i]);
-        }
-    }
-
-    const int exec_result = execve (exe_path, argv, envp);
-
-    // If we get this far, we didn't successfully exec.  Log and bail.
-    if (exec_result != 0)
-    {
-        const int exec_errno = errno;
-        if (log)
-            log->Printf ("%s: forked pid %" PRIu64 " failed to execve() with path '%s': %s\n", __FUNCTION__, static_cast<lldb::pid_t> (getpid ()), exe_path ? exe_path : "<null> path", strerror (exec_errno));
-    }
-    exit (-1);
-}
-
-#endif
 
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__GLIBC__) || defined(__NetBSD__)
 // The functions below implement process launching via posix_spawn() for Linux,
@@ -1636,7 +1254,6 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
 {
     Error error;
     char exe_path[PATH_MAX];
-    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
     PlatformSP host_platform_sp (Platform::GetDefaultPlatform ());
 
@@ -1675,57 +1292,35 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
 
     ::pid_t pid = LLDB_INVALID_PROCESS_ID;
 
-    if (launch_info.GetFlags().Test (eLaunchFlagDebug))
-    {
-        // We need to launch using the launch pipe sync approach.
-        // Note MacOSX doesn't need this because they have a special flag they can
-        // pass to the posix spawn routine.
-        error = LaunchProcessForkPipeExec(exe_path, launch_info, pid);
-    }
-    else
-    {
-        // Use a stock posix spawn mechanism.
-        error = LaunchProcessPosixSpawn(exe_path, launch_info, pid);
-    }
+    error = LaunchProcessPosixSpawn(exe_path, launch_info, pid);
 
     if (pid != LLDB_INVALID_PROCESS_ID)
     {
         // If all went well, then set the process ID into the launch info
         launch_info.SetProcessID(pid);
 
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+
         // Make sure we reap any processes we spawn or we will have zombies.
         if (!launch_info.MonitorProcess())
         {
             const bool monitor_signals = false;
-            Host::MonitorChildProcessCallback callback = nullptr;
-
-            if (!launch_info.GetFlags().Test(lldb::eLaunchFlagDontSetExitStatus))
-            {
-                callback = Process::SetProcessExitStatus;
-                if (log)
-                    log->Printf ("Host::%s monitored child process %s.", __FUNCTION__, callback ? "with Process::SetProcessExitStatus() callback" : "with no callback");
-
-                StartMonitoringChildProcess (callback,
-                                             NULL,
-                                             pid,
-                                             monitor_signals);
-            }
-            else
-            {
-                if (log)
-                    log->Printf ("Host::%s skipping monitoring of child process --- we can't have stub and lldb both check wait status.", __FUNCTION__);
-            }
-
+            StartMonitoringChildProcess (Process::SetProcessExitStatus,
+                                         NULL,
+                                         pid,
+                                         monitor_signals);
+            if (log)
+                log->PutCString ("monitored child process with default Process::SetProcessExitStatus.");
         }
         else
         {
             if (log)
-                log->Printf ("Host::%s monitored child process with user-specified process monitor.", __FUNCTION__);
+                log->PutCString ("monitored child process with user-specified process monitor.");
         }
     }
     else
     {
-        // Invalid process ID, something didn't go well.
+        // Invalid process ID, something didn't go well
         if (error.Success())
             error.SetErrorString ("process launch failed for unknown reasons");
     }
