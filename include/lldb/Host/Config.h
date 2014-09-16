@@ -14,6 +14,10 @@
 
 #include "lldb/Host/macosx/Config.h"
 
+#elif defined(ANDROID)
+
+#include "lldb/Host/android/Config.h"
+
 #elif defined(__linux__) || defined(__GNU__)
 
 #include "lldb/Host/linux/Config.h"

@@ -31,6 +31,9 @@ char *ptsname(int fd) { return 0; }
 
 pid_t fork(void) { return 0; }
 pid_t setsid(void) { return 0; }
+#elif defined(ANDROID)
+// empty functions
+int posix_openpt(int flag) { return 0; }
 #endif
 
 using namespace lldb_utility;

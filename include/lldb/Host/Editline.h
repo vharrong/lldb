@@ -14,8 +14,10 @@
 #include "lldb/lldb-private.h"
 
 #include <stdio.h>
-#ifdef _WIN32
+#if defined(_WIN32)
 #include "lldb/Host/windows/editlinewin.h"
+#elif defined(ANDROID)
+#include "lldb/Host/android/editlineandroid.h"
 #else
 #include <histedit.h>
 #endif

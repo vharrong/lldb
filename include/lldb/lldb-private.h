@@ -16,6 +16,10 @@
 #include "lldb/Host/windows/win32.h"
 #endif
 
+#ifdef ANDROID
+#include "lldb/Host/android/Android.h"
+#endif
+
 #include "lldb/lldb-public.h"
 #include "lldb/lldb-private-enumerations.h"
 #include "lldb/lldb-private-interfaces.h"

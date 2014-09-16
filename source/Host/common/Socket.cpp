@@ -18,6 +18,14 @@
 #include "lldb/Host/TimeValue.h"
 #include "lldb/Interpreter/Args.h"
 
+#ifdef ANDROID
+#include <linux/tcp.h>
+#include <bits/error_constants.h>
+#include <asm-generic/errno-base.h>
+#include <errno.h>
+#include <arpa/inet.h>
+#endif
+
 #ifndef LLDB_DISABLE_POSIX
 #include <arpa/inet.h>
 #include <netdb.h>

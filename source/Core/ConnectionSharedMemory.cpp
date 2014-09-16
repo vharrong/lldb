@@ -6,6 +6,7 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+#if !ANDROID
 
 #include "lldb/Core/ConnectionSharedMemory.h"
 
@@ -156,3 +157,4 @@ ConnectionSharedMemory::Open (bool create, const char *name, size_t size, Error 
     return eConnectionStatusError;
 }
 
+#endif // !ANDROID

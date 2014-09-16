@@ -18,13 +18,18 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <linux/unistd.h>
+#ifdef ANDROID
+#include <linux/personality.h>
+#include <linux/user.h>
+#else
 #include <sys/personality.h>
+#include <sys/user.h>
+#endif
 #include <sys/ptrace.h>
 #include <sys/uio.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
-#include <sys/user.h>
 #include <sys/wait.h>
 
 #if defined (__arm64__) || defined (__aarch64__)
@@ -271,11 +276,14 @@ namespace
         PtraceDisplayBytes(req, data, data_size);
 
         errno = 0;
+#ifdef ANDROID
+        result = ptrace(static_cast<__ptrace_request>(req), static_cast< ::pid_t>(pid), addr, data);
+#else
         if (req == PTRACE_GETREGSET || req == PTRACE_SETREGSET)
             result = ptrace(static_cast<__ptrace_request>(req), static_cast< ::pid_t>(pid), *(unsigned int *)addr, data);
         else
             result = ptrace(static_cast<__ptrace_request>(req), static_cast< ::pid_t>(pid), addr, data);
-
+#endif
         if (log)
             log->Printf("ptrace(%s, %" PRIu64 ", %p, %p, %zu)=%lX called from file %s line %d",
                     reqName, pid, addr, data, data_size, result, file, line);

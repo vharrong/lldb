@@ -60,10 +60,18 @@ else()
       )
 
   elseif (CMAKE_SYSTEM_NAME MATCHES "Linux")
-    add_host_subdirectory(linux
-      linux/Host.cpp
-      linux/HostInfoLinux.cpp
-      )
+    if (ANDROID)
+      add_host_subdirectory(android
+        android/Host.cpp
+        android/HostInfoAndroid.cpp
+        android/EditLineAndroid.cpp
+        )
+    else()
+      add_host_subdirectory(linux
+        linux/Host.cpp
+        linux/HostInfoLinux.cpp
+        )
+    endif()
   elseif (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
     add_host_subdirectory(freebsd
       freebsd/Host.cpp

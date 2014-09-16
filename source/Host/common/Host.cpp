@@ -29,7 +29,12 @@
 
 #if !defined (__GNU__) && !defined (_WIN32)
 // Does not exist under GNU/HURD or Windows
+#ifdef ANDROID
+#include <unistd.h>
+#include <linux/sysctl.h>
+#else
 #include <sys/sysctl.h>
+#endif
 #endif
 
 #if defined (__APPLE__)
@@ -39,7 +44,9 @@
 #endif
 
 #if defined (__linux__) || defined (__FreeBSD__) || defined (__FreeBSD_kernel__) || defined (__APPLE__) || defined(__NetBSD__)
+#ifndef ANDROID
 #include <spawn.h>
+#endif
 #include <sys/wait.h>
 #include <sys/syscall.h>
 #endif
@@ -150,19 +157,24 @@ class ScopedPThreadCancelDisabler
 public:
     ScopedPThreadCancelDisabler()
     {
+#ifdef ANDROID
+    	m_old_state = -1;
+#else
         // Disable the ability for this thread to be cancelled
         int err = ::pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, &m_old_state);
         if (err != 0)
             m_old_state = -1;
-
+#endif
     }
 
     ~ScopedPThreadCancelDisabler()
     {
+#ifndef ANDROID
         // Restore the ability for this thread to be cancelled to what it
         // previously was.
         if (m_old_state != -1)
             ::pthread_setcancelstate (m_old_state, 0);
+#endif
     }
 private:
     int m_old_state;    // Save the old cancelability state.
@@ -200,11 +212,14 @@ MonitorChildProcessThreadFunction (void *arg)
             log->Printf("%s ::wait_pid (pid = %" PRIi32 ", &status, options = %i)...", function, pid, options);
 
         // Wait for all child processes
+#ifndef /*TODO*/ ANDROID
         ::pthread_testcancel ();
+#endif
         // Get signals from all children with same process group of pid
         const ::pid_t wait_pid = ::waitpid (pid, &status, options);
+#ifndef ANDROID
         ::pthread_testcancel ();
-
+#endif
         if (wait_pid == -1)
         {
             if (errno == EINTR)
@@ -337,6 +352,8 @@ Host::GetCurrentThreadID()
     return thread_self;
 #elif defined(__FreeBSD__)
     return lldb::tid_t(pthread_getthreadid_np());
+#elif defined(ANDROID)
+    return lldb::tid_t(gettid());
 #elif defined(__linux__)
     return lldb::tid_t(syscall(SYS_gettid));
 #else
@@ -507,10 +524,14 @@ Host::ThreadCreate
 bool
 Host::ThreadCancel (lldb::thread_t thread, Error *error)
 {
+#ifdef ANDROID
+	return false;
+#else
     int err = ::pthread_cancel (thread);
     if (error)
         error->SetError(err, eErrorTypePOSIX);
     return err == 0;
+#endif
 }
 
 bool
@@ -1025,8 +1046,7 @@ Host::RunShellCommand (const char *command,
 // LaunchProcessPosixSpawn for Apple, Linux, FreeBSD and other GLIBC
 // systems
 
-#if defined (__APPLE__) || defined (__linux__) || defined (__FreeBSD__) || defined (__GLIBC__) || defined(__NetBSD__)
-
+#if (defined (__APPLE__) || defined (__linux__) || defined (__FreeBSD__) || defined (__GLIBC__) || defined(__NetBSD__) ) && (!defined(ANDROID) )
 // this method needs to be visible to macosx/Host.cpp and
 // common/Host.cpp.
 
@@ -1357,7 +1377,7 @@ Host::AddPosixSpawnFileAction(void *_file_actions, const FileAction *info, Log *
 #endif // LaunchProcedssPosixSpawn: Apple, Linux, FreeBSD and other GLIBC systems
 
 
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__GLIBC__) || defined(__NetBSD__)
+#if (defined(__linux__) || defined(__FreeBSD__) || defined(__GLIBC__) || defined(__NetBSD__)) && (!defined(ANDROID))
 // The functions below implement process launching via posix_spawn() for Linux,
 // FreeBSD and NetBSD.
 

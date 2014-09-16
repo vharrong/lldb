@@ -1325,6 +1325,27 @@ lldb_private::formatters::ObjCSELSummaryProvider (ValueObject& valobj, Stream& s
     return true;
 }
 
+#ifdef ANDROID
+// this function is not currently implemented in NDK
+time_t
+timegm(struct tm *tm)
+{
+    time_t ret;
+    char *tz;
+
+   tz = getenv("TZ");
+    setenv("TZ", "", 1);
+    tzset();
+    ret = mktime(tm);
+    if (tz)
+        setenv("TZ", tz, 1);
+    else
+        unsetenv("TZ");
+    tzset();
+    return ret;
+}
+#endif
+
 // POSIX has an epoch on Jan-1-1970, but Cocoa prefers Jan-1-2001
 // this call gives the POSIX equivalent of the Cocoa epoch
 time_t
