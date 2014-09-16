@@ -29,7 +29,7 @@
 #include "lldb/Core/Error.h"
 #include "lldb/Core/ConnectionFileDescriptor.h"
 #include "lldb/Core/ConnectionMachPort.h"
-#include "lldb/Core/Debugger.h"
+//#include "lldb/Core/Debugger.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Host/HostInfo.h"
@@ -155,16 +155,17 @@ initialize_lldb_gdbserver ()
 {
     HostInfo::Initialize ();
     PluginManager::Initialize ();
-    Debugger::Initialize (NULL);
+    //Debugger::Initialize (NULL);
 }
 
 static void
 terminate_lldb_gdbserver ()
 {
     Debugger::Terminate ();
-    PluginManager::Terminate ();
+    //PluginManager::Terminate ();
 }
 
+#if 0
 static void
 run_lldb_commands (const lldb::DebuggerSP &debugger_sp, const std::vector<std::string> lldb_commands)
 {
@@ -179,6 +180,7 @@ run_lldb_commands (const lldb::DebuggerSP &debugger_sp, const std::vector<std::s
             puts (output);
     }
 }
+#endif
 
 static lldb::PlatformSP
 setup_platform (const std::string platform_name)
@@ -512,11 +514,13 @@ main (int argc, char *argv[])
 
     initialize_lldb_gdbserver ();
 
+#if 0
     lldb::DebuggerSP debugger_sp = Debugger::CreateInstance ();
 
     debugger_sp->SetInputFileHandle(stdin, false);
     debugger_sp->SetOutputFileHandle(stdout, false);
     debugger_sp->SetErrorFileHandle(stderr, false);
+#endif
 
     // ProcessLaunchInfo launch_info;
     ProcessAttachInfo attach_info;
@@ -658,13 +662,13 @@ main (int argc, char *argv[])
     }
 
     // Run any commands requested.
-    run_lldb_commands (debugger_sp, lldb_commands);
+    // run_lldb_commands (debugger_sp, lldb_commands);
 
     // Setup the platform that GDBRemoteCommunicationServer will use.
     lldb::PlatformSP platform_sp = setup_platform (platform_name);
 
     const bool is_platform = false;
-    GDBRemoteCommunicationServer gdb_server (is_platform, platform_sp, debugger_sp);
+    GDBRemoteCommunicationServer gdb_server (is_platform, platform_sp);
 
     const char *const host_and_port = argv[0];
     argc -= 1;

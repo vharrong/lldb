@@ -45,8 +45,7 @@ public:
     GDBRemoteCommunicationServer(bool is_platform);
 
     GDBRemoteCommunicationServer(bool is_platform,
-                                 const lldb::PlatformSP& platform_sp,
-                                 lldb::DebuggerSP& debugger_sp);
+                                 const lldb::PlatformSP& platform_sp);
 
     virtual
     ~GDBRemoteCommunicationServer();
