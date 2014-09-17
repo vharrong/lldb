@@ -136,29 +136,6 @@ namespace
         return signals;
     }
 
-    const char *
-    GetFilePath(const lldb_private::FileAction *file_action, const char *default_path)
-    {
-        const char *pts_name = "/dev/pts/";
-        const char *path = NULL;
-
-        if (file_action)
-        {
-            if (file_action->GetAction() == FileAction::eFileActionOpen)
-            {
-                path = file_action->GetPath ();
-                // By default the stdio paths passed in will be pseudo-terminal
-                // (/dev/pts). If so, convert to using a different default path
-                // instead to redirect I/O to the debugger console. This should
-                //  also handle user overrides to /dev/null or a different file.
-                if (!path || ::strncmp (path, pts_name, ::strlen (pts_name)) == 0)
-                    path = default_path;
-            }
-        }
-
-        return path;
-    }
-
     Error
     ResolveProcessArchitecture (lldb::pid_t pid, Platform &platform, ArchSpec &arch)
     {
@@ -1152,9 +1129,9 @@ NativeProcessLinux::LaunchArgs::LaunchArgs(NativeProcessLinux *monitor,
                                        lldb_private::Module *module,
                                        char const **argv,
                                        char const **envp,
-                                       const char *stdin_path,
-                                       const char *stdout_path,
-                                       const char *stderr_path,
+                                       const std::string &stdin_path,
+                                       const std::string &stdout_path,
+                                       const std::string &stderr_path,
                                        const char *working_dir,
                                        const lldb_private::ProcessLaunchInfo &launch_info)
     : OperationArgs(monitor),
@@ -1209,18 +1186,39 @@ NativeProcessLinux::LaunchProcess (
     const lldb_private::FileAction *file_action;
 
     // Default of NULL will mean to use existing open file descriptors.
-    const char *stdin_path = NULL;
-    const char *stdout_path = NULL;
-    const char *stderr_path = NULL;
+    std::string stdin_path;
+    std::string stdout_path;
+    std::string stderr_path;
 
     file_action = launch_info.GetFileActionForFD (STDIN_FILENO);
-    stdin_path = GetFilePath (file_action, stdin_path);
+    if (file_action)
+        stdin_path = file_action->GetPath ();
 
     file_action = launch_info.GetFileActionForFD (STDOUT_FILENO);
-    stdout_path = GetFilePath (file_action, stdout_path);
+    if (file_action)
+        stdout_path = file_action->GetPath ();
 
     file_action = launch_info.GetFileActionForFD (STDERR_FILENO);
-    stderr_path = GetFilePath (file_action, stderr_path);
+    if (file_action)
+        stderr_path = file_action->GetPath ();
+
+    if (log)
+    {
+        if (!stdin_path.empty ())
+            log->Printf ("NativeProcessLinux::%s setting STDIN to '%s'", __FUNCTION__, stdin_path.c_str ());
+        else
+            log->Printf ("NativeProcessLinux::%s leaving STDIN as is", __FUNCTION__);
+
+        if (!stdout_path.empty ())
+            log->Printf ("NativeProcessLinux::%s setting STDOUT to '%s'", __FUNCTION__, stdout_path.c_str ());
+        else
+            log->Printf ("NativeProcessLinux::%s leaving STDOUT as is", __FUNCTION__);
+
+        if (!stderr_path.empty ())
+            log->Printf ("NativeProcessLinux::%s setting STDERR to '%s'", __FUNCTION__, stderr_path.c_str ());
+        else
+            log->Printf ("NativeProcessLinux::%s leaving STDERR as is", __FUNCTION__);
+    }
 
     // Create the NativeProcessLinux in launch mode.
     native_process_sp.reset (new NativeProcessLinux ());
@@ -1347,9 +1345,9 @@ NativeProcessLinux::LaunchInferior (
     Module *module,
     const char *argv[],
     const char *envp[],
-    const char *stdin_path,
-    const char *stdout_path,
-    const char *stderr_path,
+    const std::string &stdin_path,
+    const std::string &stdout_path,
+    const std::string &stderr_path,
     const char *working_dir,
     const lldb_private::ProcessLaunchInfo &launch_info,
     lldb_private::Error &error)
@@ -1529,9 +1527,6 @@ NativeProcessLinux::Launch(LaunchArgs *args)
 
     const char **argv = args->m_argv;
     const char **envp = args->m_envp;
-    const char *stdin_path = args->m_stdin_path;
-    const char *stdout_path = args->m_stdout_path;
-    const char *stderr_path = args->m_stderr_path;
     const char *working_dir = args->m_working_dir;
 
     lldb_utility::PseudoTerminal terminal;
@@ -1542,6 +1537,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
 
     lldb::ThreadSP inferior;
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+
 
     // Propagate the environment if one is not supplied.
     if (envp == NULL || envp[0] == NULL)
@@ -1568,6 +1564,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     // Child process.
     if (pid == 0)
     {
+        // FIXME log entries here don't log out, at least not to a file-based log.
         if (log)
             log->Printf ("NativeProcessLinux::%s inferior process preparing to fork", __FUNCTION__);
 
@@ -1613,19 +1610,16 @@ NativeProcessLinux::Launch(LaunchArgs *args)
         }
 
         // Dup file descriptors if needed.
-        //
-        // FIXME: If two or more of the paths are the same we needlessly open
-        // the same file multiple times.
-        if (stdin_path != NULL && stdin_path[0])
-            if (!DupDescriptor(stdin_path, STDIN_FILENO, O_RDONLY))
+        if (!args->m_stdin_path.empty ())
+            if (!DupDescriptor(args->m_stdin_path.c_str (), STDIN_FILENO, O_RDONLY))
                 exit(eDupStdinFailed);
 
-        if (stdout_path != NULL && stdout_path[0])
-            if (!DupDescriptor(stdout_path, STDOUT_FILENO, O_WRONLY | O_CREAT))
+        if (!args->m_stdout_path.empty ())
+            if (!DupDescriptor(args->m_stdout_path.c_str (), STDOUT_FILENO, O_WRONLY | O_CREAT))
                 exit(eDupStdoutFailed);
 
-        if (stderr_path != NULL && stderr_path[0])
-            if (!DupDescriptor(stderr_path, STDERR_FILENO, O_WRONLY | O_CREAT))
+        if (!args->m_stderr_path.empty ())
+            if (!DupDescriptor(args->m_stderr_path.c_str (), STDERR_FILENO, O_WRONLY | O_CREAT))
                 exit(eDupStderrFailed);
 
         // Change working directory

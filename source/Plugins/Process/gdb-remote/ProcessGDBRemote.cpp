@@ -749,7 +749,11 @@ ProcessGDBRemote::WillLaunchOrAttach ()
 Error
 ProcessGDBRemote::DoLaunch (Module *exe_module, ProcessLaunchInfo &launch_info)
 {
+    Log *log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
     Error error;
+
+    if (log)
+        log->Printf ("ProcessGDBRemote::%s() entered", __FUNCTION__);
 
     uint32_t launch_flags = launch_info.GetFlags().Get();
     const char *stdin_path = NULL;
@@ -777,10 +781,21 @@ ProcessGDBRemote::DoLaunch (Module *exe_module, ProcessLaunchInfo &launch_info)
             stderr_path = file_action->GetPath();
     }
 
+    if (log)
+    {
+        if (stdin_path || stdout_path || stderr_path)
+            log->Printf ("ProcessGDBRemote::%s provided with STDIO paths via launch_info: stdin=%s, stdout=%s, stdout=%s",
+                         __FUNCTION__,
+                         stdin_path ? stdin_path : "<null>",
+                         stdout_path ? stdout_path : "<null>",
+                         stderr_path ? stderr_path : "<null>");
+        else
+            log->Printf ("ProcessGDBRemote::%s no STDIO paths given via launch_info", __FUNCTION__);
+    }
+
     //  ::LogSetBitMask (GDBR_LOG_DEFAULT);
     //  ::LogSetOptions (LLDB_LOG_OPTION_THREADSAFE | LLDB_LOG_OPTION_PREPEND_TIMESTAMP | LLDB_LOG_OPTION_PREPEND_PROC_AND_THREAD);
     //  ::LogSetLogFile ("/dev/stdout");
-    Log *log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
 
     ObjectFile * object_file = exe_module->GetObjectFile();
     if (object_file)
@@ -817,6 +832,13 @@ ProcessGDBRemote::DoLaunch (Module *exe_module, ProcessLaunchInfo &launch_info)
 
                 if (stderr_path == NULL)
                     stderr_path = slave_name;
+
+                if (log)
+                    log->Printf ("ProcessGDBRemote::%s adjusted STDIO paths for local platform (IsHost() is true) using slave: stdin=%s, stdout=%s, stdout=%s",
+                                 __FUNCTION__,
+                                 stdin_path ? stdin_path : "<null>",
+                                 stdout_path ? stdout_path : "<null>",
+                                 stderr_path ? stderr_path : "<null>");
             }
 
             // Set STDIN to /dev/null if we want STDIO disabled or if either
@@ -834,7 +856,14 @@ ProcessGDBRemote::DoLaunch (Module *exe_module, ProcessLaunchInfo &launch_info)
             if (disable_stdio || (stderr_path == NULL && (stdin_path || stdout_path)))
                 stderr_path = "/dev/null";
 
-            if (stdin_path) 
+            if (log)
+                log->Printf ("ProcessGDBRemote::%s final STDIO paths after all adjustments: stdin=%s, stdout=%s, stdout=%s",
+                             __FUNCTION__,
+                             stdin_path ? stdin_path : "<null>",
+                             stdout_path ? stdout_path : "<null>",
+                             stderr_path ? stderr_path : "<null>");
+
+            if (stdin_path)
                 m_gdb_comm.SetSTDIN (stdin_path);
             if (stdout_path)
                 m_gdb_comm.SetSTDOUT (stdout_path);
