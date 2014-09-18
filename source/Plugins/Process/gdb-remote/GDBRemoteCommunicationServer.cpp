@@ -483,6 +483,27 @@ GDBRemoteCommunicationServer::LaunchProcess ()
         return LaunchPlatformProcess ();
 }
 
+// Return false if a file action exists and does not point to /dev/null; true otherwise.
+static bool
+AreAllLaunchFileActionsForDevNull (const ProcessLaunchInfo &launch_info)
+{
+    size_t i = 0;
+    for (auto file_action = launch_info.GetFileActionAtIndex (i);
+         file_action;
+         ++i, file_action = launch_info.GetFileActionAtIndex (i))
+    {
+        // If the file action points to a path that is not /dev/null, we're done.
+        if (file_action->GetPath () && (strcmp(file_action->GetPath (), "/dev/null") != 0))
+        {
+            // We have a path and it's not to /dev/null.
+            return false;
+        }
+    }
+
+    // Either there were no file actions, no file actions with paths, or all file actions with paths were to /dev/null.
+    return true;
+}
+
 lldb_private::Error
 GDBRemoteCommunicationServer::LaunchDebugServerProcess ()
 {
@@ -507,20 +528,32 @@ GDBRemoteCommunicationServer::LaunchDebugServerProcess ()
         return error;
     }
 
-    // Setup stdout/stderr mapping from inferior.
-    auto terminal_fd = m_debugged_process_sp->GetTerminalFileDescriptor ();
-    if (terminal_fd >= 0)
+    // Check if STDIO file descriptors to something other than /dev/null were provided.  If so, we use those for output handling; otherwise, we need to mirror inferior stdout/stderr over $O messages.
+    if (AreAllLaunchFileActionsForDevNull (m_process_launch_info))
     {
         if (log)
-            log->Printf ("ProcessGDBRemoteCommunicationServer::%s setting inferior STDIO fd to %d", __FUNCTION__, terminal_fd);
-        error = SetSTDIOFileDescriptor (terminal_fd);
-        if (error.Fail ())
-            return error;
+            log->Printf ("GDBRemoteCommunicationServer::%s pid %" PRIu64 " setting up stdout/stderr redirection via $O gdb-remote commands", __FUNCTION__, m_debugged_process_sp->GetID ());
+
+        // Setup stdout/stderr mapping from inferior to $O
+        auto terminal_fd = m_debugged_process_sp->GetTerminalFileDescriptor ();
+        if (terminal_fd >= 0)
+        {
+            if (log)
+                log->Printf ("ProcessGDBRemoteCommunicationServer::%s setting inferior STDIO fd to %d", __FUNCTION__, terminal_fd);
+            error = SetSTDIOFileDescriptor (terminal_fd);
+            if (error.Fail ())
+                return error;
+        }
+        else
+        {
+            if (log)
+                log->Printf ("ProcessGDBRemoteCommunicationServer::%s ignoring inferior STDIO since terminal fd reported as %d", __FUNCTION__, terminal_fd);
+        }
     }
     else
     {
         if (log)
-            log->Printf ("ProcessGDBRemoteCommunicationServer::%s ignoring inferior STDIO since terminal fd reported as %d", __FUNCTION__, terminal_fd);
+            log->Printf ("GDBRemoteCommunicationServer::%s pid %" PRIu64 " skipping stdout/stderr redirection via $O: inferior will communicate over client-provided file descriptors", __FUNCTION__, m_debugged_process_sp->GetID ());
     }
 
     printf ("Launched '%s' as process %" PRIu64 "...\n", m_process_launch_info.GetArguments ().GetArgumentAtIndex (0), m_process_launch_info.GetProcessID ());

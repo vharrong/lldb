@@ -702,8 +702,39 @@ PlatformLinux::DebugProcess (ProcessLaunchInfo &launch_info,
     process_sp->SetUnixSignals (Host::GetUnixSignals ());
 
     // Do the launch.
+    if (log)
+    {
+        log->Printf ("PlatformLinux::%s launching process with the following file actions:", __FUNCTION__);
+
+        StreamString stream;
+        size_t i = 0;
+        const FileAction *file_action;
+        while ((file_action = launch_info.GetFileActionAtIndex (i++)) != nullptr)
+        {
+            file_action->Dump (stream);
+            log->PutCString (stream.GetString().c_str ());
+            stream.Clear();
+        }
+    }
+
     error = process_sp->Launch(launch_info);
-    if (error.Fail ())
+    if (error.Success ())
+    {
+        // Hook up process PTY if we have one (which we should for local debugging with llgs).
+        int pty_fd = launch_info.GetPTY().ReleaseMasterFileDescriptor();
+        if (pty_fd != lldb_utility::PseudoTerminal::invalid_fd)
+        {
+            process_sp->SetSTDIOFileDescriptor(pty_fd);
+            if (log)
+                log->Printf ("PlatformLinux::%s pid %" PRIu64 " hooked up STDIO pty to process", __FUNCTION__, process_sp->GetID ());
+        }
+        else
+        {
+            if (log)
+                log->Printf ("PlatformLinux::%s pid %" PRIu64 " not using process STDIO pty", __FUNCTION__, process_sp->GetID ());
+        }
+    }
+    else
     {
         if (log)
             log->Printf ("PlatformLinux::%s process launch failed: %s", __FUNCTION__, error.AsCString ());
