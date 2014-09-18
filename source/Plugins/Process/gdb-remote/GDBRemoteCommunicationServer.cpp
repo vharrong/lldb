@@ -1240,7 +1240,7 @@ GDBRemoteCommunicationServer::Handle_qHostInfo (StringExtractorGDBRemote &packet
     ArchSpec host_arch(HostInfo::GetArchitecture());
     const llvm::Triple &host_triple = host_arch.GetTriple();
     response.PutCString("triple:");
-    response.PutCString(host_triple.getTriple().c_str());
+    response.PutCStringAsRawHex8(host_triple.getTriple().c_str());
     response.Printf (";ptrsize:%u;",host_arch.GetAddressByteSize());
 
     const char* distribution_id = host_arch.GetDistributionId ().AsCString ();
@@ -1358,7 +1358,7 @@ CreateProcessInfoResponse (const ProcessInstanceInfo &proc_info, StreamString &r
     {
         const llvm::Triple &proc_triple = proc_arch.GetTriple();
         response.PutCString("triple:");
-        response.PutCString(proc_triple.getTriple().c_str());
+        response.PutCStringAsRawHex8(proc_triple.getTriple().c_str());
         response.PutChar(';');
     }
 }
@@ -1394,7 +1394,10 @@ CreateProcessInfoResponse_DebugServerStyle (const ProcessInstanceInfo &proc_info
             response.Printf ("vendor:%s;", vendor.c_str ());
 #else
         // We'll send the triple.
-        response.Printf ("triple:%s;", proc_triple.getTriple().c_str ());
+        response.PutCString("triple:");
+        response.PutCStringAsRawHex8(proc_triple.getTriple().c_str());
+        response.PutChar(';');
+
 #endif
         std::string ostype = proc_triple.getOSName ();
         // Adjust so ostype reports ios for Apple/ARM and Apple/ARM64.
