@@ -181,6 +181,10 @@ DynamicLoaderPOSIXDYLD::DidAttach()
 void
 DynamicLoaderPOSIXDYLD::DidLaunch()
 {
+    Log *log (GetLogIfAnyCategoriesSet(LIBLLDB_LOG_DYNAMIC_LOADER));
+    if (log)
+        log->Printf ("DynamicLoaderPOSIXDYLD::%s()", __FUNCTION__);
+
     ModuleSP executable;
     addr_t load_offset;
 
@@ -194,7 +198,11 @@ DynamicLoaderPOSIXDYLD::DidLaunch()
         ModuleList module_list;
         module_list.Append(executable);
         UpdateLoadedSections(executable, LLDB_INVALID_ADDRESS, load_offset);
+
+        if (log)
+            log->Printf ("DynamicLoaderPOSIXDYLD::%s about to call ProbeEntry()", __FUNCTION__);
         ProbeEntry();
+
         m_process->GetTarget().ModulesDidLoad(module_list);
     }
 }
@@ -247,8 +255,7 @@ DynamicLoaderPOSIXDYLD::ProbeEntry()
     }
 
     if (log)
-        if (log)
-            log->Printf ("DynamicLoaderPOSIXDYLD::%s pid %" PRIu64 " GetEntryPoint() returned address 0x%" PRIx64 ", setting entry breakpoint", __FUNCTION__, m_process ? m_process->GetID () : LLDB_INVALID_PROCESS_ID, entry);
+        log->Printf ("DynamicLoaderPOSIXDYLD::%s pid %" PRIu64 " GetEntryPoint() returned address 0x%" PRIx64 ", setting entry breakpoint", __FUNCTION__, m_process ? m_process->GetID () : LLDB_INVALID_PROCESS_ID, entry);
 
 
     Breakpoint *const entry_break = m_process->GetTarget().CreateBreakpoint(entry, true, false).get();
