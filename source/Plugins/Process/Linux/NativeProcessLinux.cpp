@@ -3793,7 +3793,7 @@ NativeProcessLinux::GetOrCreateThread (lldb::tid_t thread_id, bool &created)
 Error
 NativeProcessLinux::FixupBreakpointPCAsNeeded (NativeThreadProtocolSP &thread_sp)
 {
-    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
 
     Error error;
 

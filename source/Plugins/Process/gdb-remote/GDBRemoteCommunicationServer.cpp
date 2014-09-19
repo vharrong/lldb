@@ -3790,7 +3790,7 @@ GDBRemoteCommunicationServer::Handle_z (StringExtractorGDBRemote &packet)
     }
 
     // Parse out software or hardware breakpoint requested.
-    packet.SetFilePos (strlen("Z"));
+    packet.SetFilePos (strlen("z"));
     if (packet.GetBytesLeft() < 1)
         return SendIllFormedResponse(packet, "Too short z packet, missing software/hardware specifier");
 
@@ -3830,7 +3830,7 @@ GDBRemoteCommunicationServer::Handle_z (StringExtractorGDBRemote &packet)
 
     if (want_breakpoint)
     {
-        // Try to set the breakpoint.
+        // Try to clear the breakpoint.
         const Error error = m_debugged_process_sp->RemoveBreakpoint (breakpoint_addr);
         if (error.Success ())
             return SendOKResponse ();
