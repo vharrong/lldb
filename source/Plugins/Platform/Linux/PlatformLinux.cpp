@@ -28,6 +28,7 @@
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
+#include "lldb/Core/State.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/HostInfo.h"
@@ -701,7 +702,19 @@ PlatformLinux::DebugProcess (ProcessLaunchInfo &launch_info,
     // Set the unix signals properly.
     process_sp->SetUnixSignals (Host::GetUnixSignals ());
 
-    // Do the launch.
+    // Adjust launch for a hijacker.
+    ListenerSP listener_sp;
+    if (!launch_info.GetHijackListener ())
+    {
+        if (log)
+            log->Printf ("PlatformLinux::%s setting up hijacker", __FUNCTION__);
+
+        ListenerSP listener_sp (new Listener("lldb.PlatformLinux.DebugProcess.hijack"));
+        launch_info.SetHijackListener(listener_sp);
+        process_sp->HijackProcessEvents(listener_sp.get());
+    }
+
+    // Log file actions.f
     if (log)
     {
         log->Printf ("PlatformLinux::%s launching process with the following file actions:", __FUNCTION__);
@@ -717,9 +730,30 @@ PlatformLinux::DebugProcess (ProcessLaunchInfo &launch_info,
         }
     }
 
+    // Do the launch.
     error = process_sp->Launch(launch_info);
     if (error.Success ())
     {
+        // Handle the hijacking of process events.
+        if (listener_sp)
+        {
+            const StateType state = process_sp->WaitForProcessToStop (NULL, NULL, false, listener_sp.get());
+            process_sp->RestoreProcessEvents();
+
+            if (state == eStateStopped)
+            {
+                if (log)
+                    log->Printf ("PlatformLinux::%s pid %" PRIu64 " state %s\n",
+                                 __FUNCTION__, process_sp->GetID (), StateAsCString (state));
+            }
+            else
+            {
+                if (log)
+                    log->Printf ("PlatformLinux::%s pid %" PRIu64 " state is not stopped - %s\n",
+                                 __FUNCTION__, process_sp->GetID (), StateAsCString (state));
+            }
+        }
+
         // Hook up process PTY if we have one (which we should for local debugging with llgs).
         int pty_fd = launch_info.GetPTY().ReleaseMasterFileDescriptor();
         if (pty_fd != lldb_utility::PseudoTerminal::invalid_fd)
