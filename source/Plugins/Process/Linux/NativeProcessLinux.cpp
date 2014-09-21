@@ -1276,7 +1276,7 @@ NativeProcessLinux::AttachToProcess (
 
     // Grab the current platform architecture.  This should be Linux,
     // since this code is only intended to run on a Linux host.
-    PlatformSP platform_sp (Platform::GetDefaultPlatform ());
+    PlatformSP platform_sp (Platform::GetHostPlatform ());
     if (!platform_sp)
         return Error("failed to get a valid default platform");
 
@@ -1410,7 +1410,7 @@ NativeProcessLinux::AttachToInferior (lldb::pid_t pid, lldb_private::Error &erro
         log->Printf ("NativeProcessLinux::%s (pid = %" PRIi64 ")", __FUNCTION__, pid);
 
     // We can use the Host for everything except the ResolveExecutable portion.
-    PlatformSP platform_sp = Platform::GetDefaultPlatform ();
+    PlatformSP platform_sp = Platform::GetHostPlatform ();
     if (!platform_sp)
     {
         if (log)
@@ -1648,7 +1648,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
                 else
                 {
                     if (log)
-                        log->Printf ("NativeProcessLinux::%s disbling ASLR: SUCCESS", __FUNCTION__);
+                        log->Printf ("NativeProcessLinux::%s disabling ASLR: SUCCESS", __FUNCTION__);
 
                 }
             }
