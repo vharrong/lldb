@@ -709,9 +709,9 @@ PlatformLinux::DebugProcess (ProcessLaunchInfo &launch_info,
         if (log)
             log->Printf ("PlatformLinux::%s setting up hijacker", __FUNCTION__);
 
-        ListenerSP listener_sp (new Listener("lldb.PlatformLinux.DebugProcess.hijack"));
-        launch_info.SetHijackListener(listener_sp);
-        process_sp->HijackProcessEvents(listener_sp.get());
+        listener_sp.reset (new Listener("lldb.PlatformLinux.DebugProcess.hijack"));
+        launch_info.SetHijackListener (listener_sp);
+        process_sp->HijackProcessEvents (listener_sp.get ());
     }
 
     // Log file actions.f
