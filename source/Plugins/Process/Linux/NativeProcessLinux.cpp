@@ -2226,8 +2226,6 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
     case (SIGTRAP | (PTRACE_EVENT_EXIT << 8)):
     {
         // The inferior process or one of its threads is about to exit.
-        // Maintain the process or thread in a state of "limbo" until we are
-        // explicitly commanded to detach, destroy, resume, etc.
         unsigned long data = 0;
         if (!GetEventMessage(pid, &data))
             data = -1;
@@ -2253,13 +2251,10 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
         if (is_main_thread)
         {
             SetExitStatus (convert_pid_status_to_exit_type (data), convert_pid_status_to_return_code (data), nullptr, true);
-            // Resume the thread so it completely exits.
-            Resume (pid, LLDB_INVALID_SIGNAL_NUMBER);
         }
-        else
-        {
-            // FIXME figure out the path where we plan to reap the metadata for the thread.
-        }
+
+        // Resume the thread so it completely exits.
+        Resume (pid, LLDB_INVALID_SIGNAL_NUMBER);
 
         break;
     }
