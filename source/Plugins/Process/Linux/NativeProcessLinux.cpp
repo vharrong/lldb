@@ -19,12 +19,17 @@
 #include <unistd.h>
 #include <linux/unistd.h>
 #ifdef ANDROID
+#if defined(__arm__)
 #include <linux/personality.h>
 #include <linux/user.h>
 #else
 #include <sys/personality.h>
 #include <sys/user.h>
 #endif
+#else
+#include <sys/personality.h>
+#include <sys/user.h>
+#endif // ANDROID
 #include <sys/ptrace.h>
 #include <sys/uio.h>
 #include <sys/socket.h>
