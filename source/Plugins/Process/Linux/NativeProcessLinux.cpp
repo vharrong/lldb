@@ -1394,7 +1394,7 @@ WAIT_AGAIN:
     // Finally, start monitoring the child process for change in state.
     m_monitor_thread = Host::StartMonitoringChildProcess(
         NativeProcessLinux::MonitorCallback, this, GetID(), true);
-    if (m_monitor_thread.GetState() != eThreadStateRunning)
+    if (!m_monitor_thread.IsJoinable())
     {
         error.SetErrorToGenericError();
         error.SetErrorString ("Process attach failed to create monitor thread for NativeProcessLinux::MonitorCallback.");
@@ -1472,7 +1472,7 @@ WAIT_AGAIN:
     // Finally, start monitoring the child process for change in state.
     m_monitor_thread = Host::StartMonitoringChildProcess (
         NativeProcessLinux::MonitorCallback, this, GetID (), true);
-    if (m_monitor_thread.GetState() != eThreadStateRunning)
+    if (!m_monitor_thread.IsJoinable())
     {
         error.SetErrorToGenericError ();
         error.SetErrorString ("Process attach failed to create monitor thread for NativeProcessLinux::MonitorCallback.");
@@ -1493,7 +1493,7 @@ NativeProcessLinux::StartLaunchOpThread(LaunchArgs *args, Error &error)
 {
     static const char *g_thread_name = "lldb.process.nativelinux.operation";
 
-    if (m_operation_thread.GetState() == eThreadStateRunning)
+    if (m_operation_thread.IsJoinable())
         return;
 
     m_operation_thread = ThreadLauncher::LaunchThread(g_thread_name, LaunchOpThread, args, &error);
@@ -1798,7 +1798,7 @@ NativeProcessLinux::StartAttachOpThread(AttachArgs *args, lldb_private::Error &e
 {
     static const char *g_thread_name = "lldb.process.linux.operation";
 
-    if (m_operation_thread.GetState() == eThreadStateRunning)
+    if (m_operation_thread.IsJoinable())
         return;
 
     m_operation_thread = ThreadLauncher::LaunchThread(g_thread_name, AttachOpThread, args, &error);
@@ -3634,11 +3634,10 @@ NativeProcessLinux::DupDescriptor(const char *path, int fd, int flags)
 void
 NativeProcessLinux::StopMonitoringChildProcess()
 {
-    if (m_monitor_thread.GetState() == eThreadStateRunning)
+    if (m_monitor_thread.IsJoinable())
     {
         m_monitor_thread.Cancel();
         m_monitor_thread.Join(nullptr);
-        m_monitor_thread.Reset();
     }
 }
 
@@ -3660,12 +3659,11 @@ NativeProcessLinux::StopMonitor()
 void
 NativeProcessLinux::StopOpThread()
 {
-    if (m_operation_thread.GetState() != eThreadStateRunning)
+    if (!m_operation_thread.IsJoinable())
         return;
 
     m_operation_thread.Cancel();
     m_operation_thread.Join(nullptr);
-    m_operation_thread.Reset();
 }
 
 bool
