@@ -49,7 +49,7 @@ set( LLDB_USED_LIBS
   lldbPluginSymbolVendorELF
   lldbPluginObjectContainerBSDArchive
   lldbPluginObjectContainerMachOArchive
-  lldbPluginProcessGDBRemote
+  lldbPluginProcessGDBRemote  
   lldbPluginProcessMachCore
   lldbPluginProcessUtility
   lldbPluginPlatformGDB
@@ -76,6 +76,7 @@ set( LLDB_USED_LIBS
   lldbPluginInstructionARM64
   lldbPluginObjectFilePECOFF
   lldbPluginOSPython
+  lldbPluginMemoryHistoryASan
   )
 
 # Need to export the API in the liblldb.dll for Windows
@@ -130,7 +131,6 @@ if ( CMAKE_SYSTEM_NAME MATCHES "Darwin" )
     lldbPluginProcessMacOSXKernel
     lldbPluginSymbolVendorMacOSX
     lldbPluginSystemRuntimeMacOSX
-    lldbPluginProcessPOSIX
     lldbPluginProcessElfCore
     lldbPluginJITLoaderGDB
     )
@@ -169,7 +169,6 @@ list(APPEND LLDB_SYSTEM_LIBS ${system_libs})
 
 set( LLVM_LINK_COMPONENTS
   ${LLVM_TARGETS_TO_BUILD}
-  jit
   interpreter
   asmparser
   bitreader

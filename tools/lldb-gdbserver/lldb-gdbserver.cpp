@@ -32,9 +32,10 @@
 //#include "lldb/Core/Debugger.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/StreamFile.h"
-#include "lldb/Host/HostInfo.h"
+#include "lldb/Host/HostThread.h"
 #include "lldb/Host/OptionParser.h"
 #include "lldb/Host/Socket.h"
+#include "lldb/Host/ThreadLauncher.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "Plugins/Process/gdb-remote/GDBRemoteCommunicationServer.h"
@@ -55,7 +56,7 @@ using namespace lldb_private;
 
 namespace
 {
-    lldb::thread_t s_listen_thread = LLDB_INVALID_HOST_THREAD;
+HostThread s_listen_thread;
     std::unique_ptr<ConnectionFileDescriptor> s_listen_connection_up;
     std::string s_listen_url;
 }
@@ -141,33 +142,18 @@ dump_available_platforms (FILE *output_file)
         fprintf (output_file, "%s\t%s\n", plugin_name, plugin_desc);
     }
 
-    if ( Platform::GetDefaultPlatform () )
+    if ( Platform::GetHostPlatform () )
     {
         // add this since the default platform doesn't necessarily get registered by
         // the plugin name (e.g. 'host' doesn't show up as a
         // registered platform plugin even though it's the default).
-        fprintf (output_file, "%s\tDefault platform for this host.\n", Platform::GetDefaultPlatform ()->GetPluginName ().AsCString ());
+        fprintf (output_file, "%s\tDefault platform for this host.\n", Platform::GetHostPlatform ()->GetPluginName ().AsCString ());
     }
-}
-
-static void
-initialize_lldb_gdbserver ()
-{
-    HostInfo::Initialize ();
-    PluginManager::Initialize ();
-    //Debugger::Initialize (NULL);
-}
-
-static void
-terminate_lldb_gdbserver ()
-{
-    Debugger::Terminate ();
-    //PluginManager::Terminate ();
 }
 
 #if 0
 static void
-run_lldb_commands (const lldb::DebuggerSP &debugger_sp, const std::vector<std::string> lldb_commands)
+run_lldb_commands (const lldb::DebuggerSP &debugger_sp, const std::vector<std::string> &lldb_commands)
 {
     for (const auto &lldb_command : lldb_commands)
     {
@@ -183,28 +169,28 @@ run_lldb_commands (const lldb::DebuggerSP &debugger_sp, const std::vector<std::s
 #endif
 
 static lldb::PlatformSP
-setup_platform (const std::string platform_name)
+setup_platform (const std::string &platform_name)
 {
     lldb::PlatformSP platform_sp;
 
     if (platform_name.empty())
     {
         printf ("using the default platform: ");
-        platform_sp = Platform::GetDefaultPlatform ();
+        platform_sp = Platform::GetHostPlatform ();
         printf ("%s\n", platform_sp->GetPluginName ().AsCString ());
         return platform_sp;
     }
 
     Error error;
-    platform_sp = Platform::Create (platform_name.c_str(), error);
+    platform_sp = Platform::Create (lldb_private::ConstString(platform_name), error);
     if (error.Fail ())
     {
         // the host platform isn't registered with that name (at
         // least, not always.  Check if the given name matches
         // the default platform name.  If so, use it.
-        if ( Platform::GetDefaultPlatform () && ( Platform::GetDefaultPlatform ()->GetPluginName () == ConstString (platform_name.c_str()) ) )
+        if ( Platform::GetHostPlatform () && ( Platform::GetHostPlatform ()->GetPluginName () == ConstString (platform_name.c_str()) ) )
         {
-            platform_sp = Platform::GetDefaultPlatform ();
+            platform_sp = Platform::GetHostPlatform ();
         }
         else
         {
@@ -297,7 +283,7 @@ static Error
 StartListenThread (const char *hostname, uint16_t port)
 {
     Error error;
-    if (IS_VALID_LLDB_HOST_THREAD(s_listen_thread))
+    if (s_listen_thread.IsJoinable())
     {
         error.SetErrorString("listen thread already running");
     }
@@ -311,7 +297,7 @@ StartListenThread (const char *hostname, uint16_t port)
 
         s_listen_url = listen_url;
         s_listen_connection_up.reset (new ConnectionFileDescriptor ());
-        s_listen_thread = Host::ThreadCreate (listen_url, ListenThread, nullptr, &error);
+        s_listen_thread = ThreadLauncher::LaunchThread(listen_url, ListenThread, nullptr, &error);
     }
     return error;
 }
@@ -319,11 +305,8 @@ StartListenThread (const char *hostname, uint16_t port)
 static bool
 JoinListenThread ()
 {
-    if (IS_VALID_LLDB_HOST_THREAD(s_listen_thread))
-    {
-        Host::ThreadJoin(s_listen_thread, nullptr, nullptr);
-        s_listen_thread = LLDB_INVALID_HOST_THREAD;
-    }
+    if (s_listen_thread.IsJoinable())
+        s_listen_thread.Join(nullptr);
     return true;
 }
 
@@ -512,7 +495,7 @@ main (int argc, char *argv[])
     std::string named_pipe_path;
     bool reverse_connect = false;
 
-    initialize_lldb_gdbserver ();
+//    Debugger::Initialize (NULL);
 
 #if 0
     lldb::DebuggerSP debugger_sp = Debugger::CreateInstance ();
@@ -688,7 +671,7 @@ main (int argc, char *argv[])
 
     ConnectToRemote (gdb_server, reverse_connect, host_and_port, progname, named_pipe_path.c_str ());
 
-    terminate_lldb_gdbserver ();
+//    Debugger::Terminate ();
 
     fprintf(stderr, "lldb-gdbserver exiting...\n");
 

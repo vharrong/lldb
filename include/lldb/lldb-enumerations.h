@@ -382,6 +382,9 @@ namespace lldb {
         eLanguageTypeOCaml           = 0x001b,   ///< OCaml.
         eLanguageTypeRust            = 0x001c,   ///< Rust.
         eLanguageTypeC11             = 0x001d,   ///< ISO C:2011.
+        eLanguageTypeSwift           = 0x001e,   ///< Swift.
+        eLanguageTypeJulia           = 0x001f,   ///< Julia.
+        eLanguageTypeDylan           = 0x0020,   ///< Dylan.
         eNumLanguageTypes
     } LanguageType;
 
@@ -429,6 +432,7 @@ namespace lldb {
         eArgTypeFunctionName,
         eArgTypeFunctionOrSymbol,
         eArgTypeGDBFormat,
+        eArgTypeHelpText,
         eArgTypeIndex,
         eArgTypeLanguage,
         eArgTypeLineNum,
@@ -846,6 +850,29 @@ namespace lldb {
         ePathTypeLLDBTempSystemDir      // The LLDB temp directory for this system that will be cleaned up on exit
         
     } PathType;
+    
+    //----------------------------------------------------------------------
+    // Kind of member function
+    // Used by the type system
+    //----------------------------------------------------------------------
+    typedef enum MemberFunctionKind
+    {
+        eMemberFunctionKindUnknown = 0,     // Not sure what the type of this is
+        eMemberFunctionKindConstructor,     // A function used to create instances
+        eMemberFunctionKindDestructor,      // A function used to tear down existing instances
+        eMemberFunctionKindInstanceMethod,  // A function that applies to a specific instance
+        eMemberFunctionKindStaticMethod     // A function that applies to a type rather than any instance
+    } MemberFunctionKind;
+
+
+    //----------------------------------------------------------------------
+    // String matching algorithm used by SBTarget
+    //----------------------------------------------------------------------
+    typedef enum MatchType {
+        eMatchTypeNormal,
+        eMatchTypeRegex,
+        eMatchTypeStartsWith
+    } MatchType;
 
 } // namespace lldb
 

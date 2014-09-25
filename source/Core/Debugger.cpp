@@ -34,9 +34,9 @@
 #include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/DataFormatters/TypeSummary.h"
-#include "lldb/Host/DynamicLibrary.h"
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Host/Terminal.h"
+#include "lldb/Host/ThreadLauncher.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/OptionValueSInt64.h"
 #include "lldb/Interpreter/OptionValueString.h"
@@ -53,6 +53,8 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Utility/AnsiTerminal.h"
+
+#include "llvm/Support/DynamicLibrary.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -413,10 +415,10 @@ Debugger::LoadPlugin (const FileSpec& spec, Error& error)
 {
     if (g_load_plugin_callback)
     {
-        lldb::DynamicLibrarySP dynlib_sp = g_load_plugin_callback (shared_from_this(), spec, error);
-        if (dynlib_sp)
+        llvm::sys::DynamicLibrary dynlib = g_load_plugin_callback (shared_from_this(), spec, error);
+        if (dynlib.isValid())
         {
-            m_loaded_plugins.push_back(dynlib_sp);
+            m_loaded_plugins.push_back(dynlib);
             return true;
         }
     }
@@ -619,24 +621,22 @@ Debugger::FindTargetWithProcess (Process *process)
     return target_sp;
 }
 
-Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
-    UserID (g_unique_id++),
-    Properties(OptionValuePropertiesSP(new OptionValueProperties())), 
-    m_input_file_sp (new StreamFile (stdin, false)),
-    m_output_file_sp (new StreamFile (stdout, false)),
-    m_error_file_sp (new StreamFile (stderr, false)),
-    m_terminal_state (),
-    m_target_list (*this),
-    m_platform_list (),
-    m_listener ("lldb.Debugger"),
+Debugger::Debugger(lldb::LogOutputCallback log_callback, void *baton) :
+    UserID(g_unique_id++),
+    Properties(OptionValuePropertiesSP(new OptionValueProperties())),
+    m_input_file_sp(new StreamFile(stdin, false)),
+    m_output_file_sp(new StreamFile(stdout, false)),
+    m_error_file_sp(new StreamFile(stderr, false)),
+    m_terminal_state(),
+    m_target_list(*this),
+    m_platform_list(),
+    m_listener("lldb.Debugger"),
     m_source_manager_ap(),
     m_source_file_cache(),
-    m_command_interpreter_ap (new CommandInterpreter (*this, eScriptLanguageDefault, false)),
-    m_input_reader_stack (),
-    m_instance_name (),
-    m_loaded_plugins (),
-    m_event_handler_thread (LLDB_INVALID_HOST_THREAD),
-    m_io_handler_thread (LLDB_INVALID_HOST_THREAD)
+    m_command_interpreter_ap(new CommandInterpreter(*this, eScriptLanguageDefault, false)),
+    m_input_reader_stack(),
+    m_instance_name(),
+    m_loaded_plugins()
 {
     char instance_cstr[256];
     snprintf(instance_cstr, sizeof(instance_cstr), "debugger_%d", (int)GetID());
@@ -645,7 +645,7 @@ Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
         m_log_callback_stream_sp.reset (new StreamCallback (log_callback, baton));
     m_command_interpreter_ap->Initialize ();
     // Always add our default platform to the platform list
-    PlatformSP default_platform_sp (Platform::GetDefaultPlatform());
+    PlatformSP default_platform_sp (Platform::GetHostPlatform());
     assert (default_platform_sp.get());
     m_platform_list.Append (default_platform_sp, true);
     
@@ -3336,19 +3336,18 @@ Debugger::EventHandlerThread (lldb::thread_arg_t arg)
 bool
 Debugger::StartEventHandlerThread()
 {
-    if (!IS_VALID_LLDB_HOST_THREAD(m_event_handler_thread))
-        m_event_handler_thread = Host::ThreadCreate("lldb.debugger.event-handler", EventHandlerThread, this, NULL);
-    return IS_VALID_LLDB_HOST_THREAD(m_event_handler_thread);
+    if (!m_event_handler_thread.IsJoinable())
+        m_event_handler_thread = ThreadLauncher::LaunchThread("lldb.debugger.event-handler", EventHandlerThread, this, NULL);
+    return m_event_handler_thread.IsJoinable();
 }
 
 void
 Debugger::StopEventHandlerThread()
 {
-    if (IS_VALID_LLDB_HOST_THREAD(m_event_handler_thread))
+    if (m_event_handler_thread.IsJoinable())
     {
         GetCommandInterpreter().BroadcastEvent(CommandInterpreter::eBroadcastBitQuitCommandReceived);
-        Host::ThreadJoin(m_event_handler_thread, NULL, NULL);
-        m_event_handler_thread = LLDB_INVALID_HOST_THREAD;
+        m_event_handler_thread.Join(nullptr);
     }
 }
 
@@ -3365,20 +3364,19 @@ Debugger::IOHandlerThread (lldb::thread_arg_t arg)
 bool
 Debugger::StartIOHandlerThread()
 {
-    if (!IS_VALID_LLDB_HOST_THREAD(m_io_handler_thread))
-        m_io_handler_thread = Host::ThreadCreate("lldb.debugger.io-handler", IOHandlerThread, this, NULL);
-    return IS_VALID_LLDB_HOST_THREAD(m_io_handler_thread);
+    if (!m_io_handler_thread.IsJoinable())
+        m_io_handler_thread = ThreadLauncher::LaunchThread("lldb.debugger.io-handler", IOHandlerThread, this, NULL);
+    return m_io_handler_thread.IsJoinable();
 }
 
 void
 Debugger::StopIOHandlerThread()
 {
-    if (IS_VALID_LLDB_HOST_THREAD(m_io_handler_thread))
+    if (m_io_handler_thread.IsJoinable())
     {
         if (m_input_file_sp)
             m_input_file_sp->GetFile().Close();
-        Host::ThreadJoin(m_io_handler_thread, NULL, NULL);
-        m_io_handler_thread = LLDB_INVALID_HOST_THREAD;
+        m_io_handler_thread.Join(nullptr);
     }
 }
 
