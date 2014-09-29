@@ -76,8 +76,8 @@ else()
       add_host_subdirectory(android
         android/Host.cpp
         android/HostInfoAndroid.cpp
-        linux/HostThreadLinux.cpp
-        linux/ThisThread.cpp        
+        android/HostThreadAndroid.cpp
+        android/ThisThread.cpp        
         android/EditLineAndroid.cpp
         )
     else()

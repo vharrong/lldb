@@ -6,6 +6,8 @@
   add_subdirectory(MacOSX)
 #elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
   add_subdirectory(Windows)
+#elseif (ANDROID)
+  add_subdirectory(Android)
 #endif()
 
 add_subdirectory(POSIX)

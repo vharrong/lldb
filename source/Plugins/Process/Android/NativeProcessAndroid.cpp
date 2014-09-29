@@ -1,4 +1,4 @@
-//===-- NativeProcessLinux.cpp -------------------------------- -*- C++ -*-===//
+//===-- NativeProcessAndroid.cpp -------------------------------- -*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -9,7 +9,7 @@
 
 #include "lldb/lldb-python.h"
 
-#include "NativeProcessLinux.h"
+#include "NativeProcessAndroid.h"
 
 // C Includes
 #include <errno.h>
@@ -18,9 +18,16 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <linux/unistd.h>
+
+#if defined(__arm__)
+#include <linux/personality.h>
+#include <linux/user.h>
+#else
 #include <sys/personality.h>
 #include <sys/user.h>
-#include <sys/procfs.h>
+#endif
+
+//#include <sys/procfs.h>
 #include <sys/ptrace.h>
 #include <sys/uio.h>
 #include <sys/socket.h>
@@ -56,7 +63,7 @@
 #include "Utility/StringExtractor.h"
 
 #include "Plugins/Process/Utility/LinuxSignals.h"
-#include "NativeThreadLinux.h"
+#include "NativeThreadAndroid.h"
 #include "ProcFileReader.h"
 #include "ProcessPOSIXLog.h"
 
@@ -273,11 +280,14 @@ namespace
         PtraceDisplayBytes(req, data, data_size);
 
         errno = 0;
+#ifdef ANDROID
+        result = ptrace(static_cast<__ptrace_request>(req), static_cast< ::pid_t>(pid), addr, data);
+#else
         if (req == PTRACE_GETREGSET || req == PTRACE_SETREGSET)
             result = ptrace(static_cast<__ptrace_request>(req), static_cast< ::pid_t>(pid), *(unsigned int *)addr, data);
         else
             result = ptrace(static_cast<__ptrace_request>(req), static_cast< ::pid_t>(pid), addr, data);
-
+#endif
         if (log)
             log->Printf("ptrace(%s, %" PRIu64 ", %p, %p, %zu)=%lX called from file %s line %d",
                     reqName, pid, addr, data, data_size, result, file, line);
@@ -318,8 +328,8 @@ namespace
 #endif
 
     //------------------------------------------------------------------------------
-    // Static implementations of NativeProcessLinux::ReadMemory and
-    // NativeProcessLinux::WriteMemory.  This enables mutual recursion between these
+    // Static implementations of NativeProcessAndroid::ReadMemory and
+    // NativeProcessAndroid::WriteMemory.  This enables mutual recursion between these
     // functions without needed to go thru the thread funnel.
 
     static lldb::addr_t
@@ -341,7 +351,7 @@ namespace
         if (log)
             ProcessPOSIXLog::IncNestLevel();
         if (log && ProcessPOSIXLog::AtTopNestLevel() && log->GetMask().Test(POSIX_LOG_MEMORY))
-            log->Printf ("NativeProcessLinux::%s(%" PRIu64 ", %d, %p, %p, %zd, _)", __FUNCTION__,
+            log->Printf ("NativeProcessAndroid::%s(%" PRIu64 ", %d, %p, %p, %zd, _)", __FUNCTION__,
                     pid, word_size, (void*)vm_addr, buf, size);
 
         assert(sizeof(data) >= word_size);
@@ -373,7 +383,7 @@ namespace
                 // Format bytes from data by moving into print_dst for log output
                 for (unsigned i = 0; i < remainder; ++i)
                     print_dst |= (((data >> i*8) & 0xFF) << i*8);
-                log->Printf ("NativeProcessLinux::%s() [%p]:0x%lx (0x%lx)", __FUNCTION__,
+                log->Printf ("NativeProcessAndroid::%s() [%p]:0x%lx (0x%lx)", __FUNCTION__,
                         (void*)vm_addr, print_dst, (unsigned long)data);
             }
 
@@ -404,7 +414,7 @@ namespace
         if (log)
             ProcessPOSIXLog::IncNestLevel();
         if (log && ProcessPOSIXLog::AtTopNestLevel() && log->GetMask().Test(POSIX_LOG_MEMORY))
-            log->Printf ("NativeProcessLinux::%s(%" PRIu64 ", %u, %p, %p, %" PRIu64 ")", __FUNCTION__,
+            log->Printf ("NativeProcessAndroid::%s(%" PRIu64 ", %u, %p, %p, %" PRIu64 ")", __FUNCTION__,
                     pid, word_size, (void*)vm_addr, buf, size);
 
         for (bytes_written = 0; bytes_written < size; bytes_written += remainder)
@@ -423,7 +433,7 @@ namespace
                         (log->GetMask().Test(POSIX_LOG_MEMORY_DATA_LONG) ||
                                 (log->GetMask().Test(POSIX_LOG_MEMORY_DATA_SHORT) &&
                                         size <= POSIX_LOG_MEMORY_SHORT_BYTES)))
-                    log->Printf ("NativeProcessLinux::%s() [%p]:0x%lx (0x%lx)", __FUNCTION__,
+                    log->Printf ("NativeProcessAndroid::%s() [%p]:0x%lx (0x%lx)", __FUNCTION__,
                             (void*)vm_addr, *(unsigned long*)src, data);
 
                 if (PTRACE(PTRACE_POKEDATA, pid, (void*)vm_addr, (void*)data, 0))
@@ -459,7 +469,7 @@ namespace
                         (log->GetMask().Test(POSIX_LOG_MEMORY_DATA_LONG) ||
                                 (log->GetMask().Test(POSIX_LOG_MEMORY_DATA_SHORT) &&
                                         size <= POSIX_LOG_MEMORY_SHORT_BYTES)))
-                    log->Printf ("NativeProcessLinux::%s() [%p]:0x%lx (0x%lx)", __FUNCTION__,
+                    log->Printf ("NativeProcessAndroid::%s() [%p]:0x%lx (0x%lx)", __FUNCTION__,
                             (void*)vm_addr, *(unsigned long*)src, *(unsigned long*)buff);
             }
 
@@ -473,14 +483,14 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class Operation
-    /// @brief Represents a NativeProcessLinux operation.
+    /// @brief Represents a NativeProcessAndroid operation.
     ///
-    /// Under Linux, it is not possible to ptrace() from any other thread but the
+    /// Under Android, it is not possible to ptrace() from any other thread but the
     /// one that spawned or attached to the process from the start.  Therefore, when
-    /// a NativeProcessLinux is asked to deliver or change the state of an inferior
+    /// a NativeProcessAndroid is asked to deliver or change the state of an inferior
     /// process the operation must be "funneled" to a specific thread to perform the
     /// task.  The Operation class provides an abstract base for all services the
-    /// NativeProcessLinux must perform via the single virtual function Execute, thus
+    /// NativeProcessAndroid must perform via the single virtual function Execute, thus
     /// encapsulating the code that needs to run in the privileged context.
     class Operation
     {
@@ -491,7 +501,7 @@ namespace
         ~Operation() {}
 
         virtual void
-        Execute (NativeProcessLinux *process) = 0;
+        Execute (NativeProcessAndroid *process) = 0;
 
         const Error &
         GetError () const { return m_error; }
@@ -502,7 +512,7 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class ReadOperation
-    /// @brief Implements NativeProcessLinux::ReadMemory.
+    /// @brief Implements NativeProcessAndroid::ReadMemory.
     class ReadOperation : public Operation
     {
     public:
@@ -519,7 +529,7 @@ namespace
             {
             }
 
-        void Execute (NativeProcessLinux *process) override;
+        void Execute (NativeProcessAndroid *process) override;
 
     private:
         lldb::addr_t m_addr;
@@ -529,14 +539,14 @@ namespace
     };
 
     void
-    ReadOperation::Execute (NativeProcessLinux *process)
+    ReadOperation::Execute (NativeProcessAndroid *process)
     {
         m_result = DoReadMemory (process->GetID (), m_addr, m_buff, m_size, m_error);
     }
 
     //------------------------------------------------------------------------------
     /// @class WriteOperation
-    /// @brief Implements NativeProcessLinux::WriteMemory.
+    /// @brief Implements NativeProcessAndroid::WriteMemory.
     class WriteOperation : public Operation
     {
     public:
@@ -553,7 +563,7 @@ namespace
             {
             }
 
-        void Execute (NativeProcessLinux *process) override;
+        void Execute (NativeProcessAndroid *process) override;
 
     private:
         lldb::addr_t m_addr;
@@ -563,14 +573,14 @@ namespace
     };
 
     void
-    WriteOperation::Execute(NativeProcessLinux *process)
+    WriteOperation::Execute(NativeProcessAndroid *process)
     {
         m_result = DoWriteMemory (process->GetID (), m_addr, m_buff, m_size, m_error);
     }
 
     //------------------------------------------------------------------------------
     /// @class ReadRegOperation
-    /// @brief Implements NativeProcessLinux::ReadRegisterValue.
+    /// @brief Implements NativeProcessAndroid::ReadRegisterValue.
     class ReadRegOperation : public Operation
     {
     public:
@@ -580,7 +590,7 @@ namespace
               m_value(value), m_result(result)
             { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -591,7 +601,7 @@ namespace
     };
 
     void
-    ReadRegOperation::Execute(NativeProcessLinux *monitor)
+    ReadRegOperation::Execute(NativeProcessAndroid *monitor)
     {
 #if defined (__arm64__) || defined (__aarch64__)
         if (m_offset > sizeof(struct user_pt_regs))
@@ -659,14 +669,14 @@ namespace
             m_result = true;
         }
         if (log)
-            log->Printf ("NativeProcessLinux::%s() reg %s: 0x%" PRIx64, __FUNCTION__,
+            log->Printf ("NativeProcessAndroid::%s() reg %s: 0x%" PRIx64, __FUNCTION__,
                     m_reg_name, data);
 #endif
     }
 
     //------------------------------------------------------------------------------
     /// @class WriteRegOperation
-    /// @brief Implements NativeProcessLinux::WriteRegisterValue.
+    /// @brief Implements NativeProcessAndroid::WriteRegisterValue.
     class WriteRegOperation : public Operation
     {
     public:
@@ -676,7 +686,7 @@ namespace
               m_value(value), m_result(result)
             { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -687,7 +697,7 @@ namespace
     };
 
     void
-    WriteRegOperation::Execute(NativeProcessLinux *monitor)
+    WriteRegOperation::Execute(NativeProcessAndroid *monitor)
     {
 #if defined (__arm64__) || defined (__aarch64__)
         if (m_offset > sizeof(struct user_pt_regs))
@@ -743,7 +753,7 @@ namespace
         buf = (void*) m_value.GetAsUInt64();
 
         if (log)
-            log->Printf ("NativeProcessLinux::%s() reg %s: %p", __FUNCTION__, m_reg_name, buf);
+            log->Printf ("NativeProcessAndroid::%s() reg %s: %p", __FUNCTION__, m_reg_name, buf);
         if (PTRACE(PTRACE_POKEUSER, m_tid, (void*)m_offset, buf, 0))
             m_result = false;
         else
@@ -753,7 +763,7 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class ReadGPROperation
-    /// @brief Implements NativeProcessLinux::ReadGPR.
+    /// @brief Implements NativeProcessAndroid::ReadGPR.
     class ReadGPROperation : public Operation
     {
     public:
@@ -761,7 +771,7 @@ namespace
             : m_tid(tid), m_buf(buf), m_buf_size(buf_size), m_result(result)
             { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -771,7 +781,7 @@ namespace
     };
 
     void
-    ReadGPROperation::Execute(NativeProcessLinux *monitor)
+    ReadGPROperation::Execute(NativeProcessAndroid *monitor)
     {
 #if defined (__arm64__) || defined (__aarch64__)
         int regset = NT_PRSTATUS;
@@ -793,7 +803,7 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class ReadFPROperation
-    /// @brief Implements NativeProcessLinux::ReadFPR.
+    /// @brief Implements NativeProcessAndroid::ReadFPR.
     class ReadFPROperation : public Operation
     {
     public:
@@ -801,7 +811,7 @@ namespace
             : m_tid(tid), m_buf(buf), m_buf_size(buf_size), m_result(result)
             { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -811,7 +821,7 @@ namespace
     };
 
     void
-    ReadFPROperation::Execute(NativeProcessLinux *monitor)
+    ReadFPROperation::Execute(NativeProcessAndroid *monitor)
     {
 #if defined (__arm64__) || defined (__aarch64__)
         int regset = NT_FPREGSET;
@@ -833,7 +843,7 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class ReadRegisterSetOperation
-    /// @brief Implements NativeProcessLinux::ReadRegisterSet.
+    /// @brief Implements NativeProcessAndroid::ReadRegisterSet.
     class ReadRegisterSetOperation : public Operation
     {
     public:
@@ -841,7 +851,7 @@ namespace
             : m_tid(tid), m_buf(buf), m_buf_size(buf_size), m_regset(regset), m_result(result)
             { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -852,7 +862,7 @@ namespace
     };
 
     void
-    ReadRegisterSetOperation::Execute(NativeProcessLinux *monitor)
+    ReadRegisterSetOperation::Execute(NativeProcessAndroid *monitor)
     {
         if (PTRACE(PTRACE_GETREGSET, m_tid, (void *)&m_regset, m_buf, m_buf_size) < 0)
             m_result = false;
@@ -862,7 +872,7 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class WriteGPROperation
-    /// @brief Implements NativeProcessLinux::WriteGPR.
+    /// @brief Implements NativeProcessAndroid::WriteGPR.
     class WriteGPROperation : public Operation
     {
     public:
@@ -870,7 +880,7 @@ namespace
             : m_tid(tid), m_buf(buf), m_buf_size(buf_size), m_result(result)
             { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -880,7 +890,7 @@ namespace
     };
 
     void
-    WriteGPROperation::Execute(NativeProcessLinux *monitor)
+    WriteGPROperation::Execute(NativeProcessAndroid *monitor)
     {
 #if defined (__arm64__) || defined (__aarch64__)
         int regset = NT_PRSTATUS;
@@ -902,7 +912,7 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class WriteFPROperation
-    /// @brief Implements NativeProcessLinux::WriteFPR.
+    /// @brief Implements NativeProcessAndroid::WriteFPR.
     class WriteFPROperation : public Operation
     {
     public:
@@ -910,7 +920,7 @@ namespace
             : m_tid(tid), m_buf(buf), m_buf_size(buf_size), m_result(result)
             { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -920,7 +930,7 @@ namespace
     };
 
     void
-    WriteFPROperation::Execute(NativeProcessLinux *monitor)
+    WriteFPROperation::Execute(NativeProcessAndroid *monitor)
     {
 #if defined (__arm64__) || defined (__aarch64__)
         int regset = NT_FPREGSET;
@@ -942,7 +952,7 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class WriteRegisterSetOperation
-    /// @brief Implements NativeProcessLinux::WriteRegisterSet.
+    /// @brief Implements NativeProcessAndroid::WriteRegisterSet.
     class WriteRegisterSetOperation : public Operation
     {
     public:
@@ -950,7 +960,7 @@ namespace
             : m_tid(tid), m_buf(buf), m_buf_size(buf_size), m_regset(regset), m_result(result)
             { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -961,7 +971,7 @@ namespace
     };
 
     void
-    WriteRegisterSetOperation::Execute(NativeProcessLinux *monitor)
+    WriteRegisterSetOperation::Execute(NativeProcessAndroid *monitor)
     {
         if (PTRACE(PTRACE_SETREGSET, m_tid, (void *)&m_regset, m_buf, m_buf_size) < 0)
             m_result = false;
@@ -971,14 +981,14 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class ResumeOperation
-    /// @brief Implements NativeProcessLinux::Resume.
+    /// @brief Implements NativeProcessAndroid::Resume.
     class ResumeOperation : public Operation
     {
     public:
         ResumeOperation(lldb::tid_t tid, uint32_t signo, bool &result) :
             m_tid(tid), m_signo(signo), m_result(result) { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -987,7 +997,7 @@ namespace
     };
 
     void
-    ResumeOperation::Execute(NativeProcessLinux *monitor)
+    ResumeOperation::Execute(NativeProcessAndroid *monitor)
     {
         intptr_t data = 0;
 
@@ -1008,14 +1018,14 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class SingleStepOperation
-    /// @brief Implements NativeProcessLinux::SingleStep.
+    /// @brief Implements NativeProcessAndroid::SingleStep.
     class SingleStepOperation : public Operation
     {
     public:
         SingleStepOperation(lldb::tid_t tid, uint32_t signo, bool &result)
             : m_tid(tid), m_signo(signo), m_result(result) { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -1024,7 +1034,7 @@ namespace
     };
 
     void
-    SingleStepOperation::Execute(NativeProcessLinux *monitor)
+    SingleStepOperation::Execute(NativeProcessAndroid *monitor)
     {
         intptr_t data = 0;
 
@@ -1039,14 +1049,14 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class SiginfoOperation
-    /// @brief Implements NativeProcessLinux::GetSignalInfo.
+    /// @brief Implements NativeProcessAndroid::GetSignalInfo.
     class SiginfoOperation : public Operation
     {
     public:
         SiginfoOperation(lldb::tid_t tid, void *info, bool &result, int &ptrace_err)
             : m_tid(tid), m_info(info), m_result(result), m_err(ptrace_err) { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -1056,7 +1066,7 @@ namespace
     };
 
     void
-    SiginfoOperation::Execute(NativeProcessLinux *monitor)
+    SiginfoOperation::Execute(NativeProcessAndroid *monitor)
     {
         if (PTRACE(PTRACE_GETSIGINFO, m_tid, NULL, m_info, 0)) {
             m_result = false;
@@ -1068,14 +1078,14 @@ namespace
 
     //------------------------------------------------------------------------------
     /// @class EventMessageOperation
-    /// @brief Implements NativeProcessLinux::GetEventMessage.
+    /// @brief Implements NativeProcessAndroid::GetEventMessage.
     class EventMessageOperation : public Operation
     {
     public:
         EventMessageOperation(lldb::tid_t tid, unsigned long *message, bool &result)
             : m_tid(tid), m_message(message), m_result(result) { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -1084,7 +1094,7 @@ namespace
     };
 
     void
-    EventMessageOperation::Execute(NativeProcessLinux *monitor)
+    EventMessageOperation::Execute(NativeProcessAndroid *monitor)
     {
         if (PTRACE(PTRACE_GETEVENTMSG, m_tid, NULL, m_message, 0))
             m_result = false;
@@ -1097,7 +1107,7 @@ namespace
     public:
         DetachOperation(lldb::tid_t tid, Error &result) : m_tid(tid), m_error(result) { }
 
-        void Execute(NativeProcessLinux *monitor);
+        void Execute(NativeProcessAndroid *monitor);
 
     private:
         lldb::tid_t m_tid;
@@ -1105,7 +1115,7 @@ namespace
     };
 
     void
-    DetachOperation::Execute(NativeProcessLinux *monitor)
+    DetachOperation::Execute(NativeProcessAndroid *monitor)
     {
         if (ptrace(PT_DETACH, m_tid, NULL, 0) < 0)
             m_error.SetErrorToErrno();
@@ -1137,18 +1147,18 @@ EnsureFDFlags(int fd, int flags, Error &error)
     return true;
 }
 
-NativeProcessLinux::OperationArgs::OperationArgs(NativeProcessLinux *monitor)
+NativeProcessAndroid::OperationArgs::OperationArgs(NativeProcessAndroid *monitor)
     : m_monitor(monitor)
 {
     sem_init(&m_semaphore, 0, 0);
 }
 
-NativeProcessLinux::OperationArgs::~OperationArgs()
+NativeProcessAndroid::OperationArgs::~OperationArgs()
 {
     sem_destroy(&m_semaphore);
 }
 
-NativeProcessLinux::LaunchArgs::LaunchArgs(NativeProcessLinux *monitor,
+NativeProcessAndroid::LaunchArgs::LaunchArgs(NativeProcessAndroid *monitor,
                                        lldb_private::Module *module,
                                        char const **argv,
                                        char const **envp,
@@ -1169,14 +1179,14 @@ NativeProcessLinux::LaunchArgs::LaunchArgs(NativeProcessLinux *monitor,
 {
 }
 
-NativeProcessLinux::LaunchArgs::~LaunchArgs()
+NativeProcessAndroid::LaunchArgs::~LaunchArgs()
 { }
 
-NativeProcessLinux::AttachArgs::AttachArgs(NativeProcessLinux *monitor,
+NativeProcessAndroid::AttachArgs::AttachArgs(NativeProcessAndroid *monitor,
                                        lldb::pid_t pid)
     : OperationArgs(monitor), m_pid(pid) { }
 
-NativeProcessLinux::AttachArgs::~AttachArgs()
+NativeProcessAndroid::AttachArgs::~AttachArgs()
 { }
 
 // -----------------------------------------------------------------------------
@@ -1184,7 +1194,7 @@ NativeProcessLinux::AttachArgs::~AttachArgs()
 // -----------------------------------------------------------------------------
 
 lldb_private::Error
-NativeProcessLinux::LaunchProcess (
+NativeProcessAndroid::LaunchProcess (
     lldb_private::Module *exe_module,
     lldb_private::ProcessLaunchInfo &launch_info,
     lldb_private::NativeProcessProtocol::NativeDelegate &native_delegate,
@@ -1222,15 +1232,15 @@ NativeProcessLinux::LaunchProcess (
     file_action = launch_info.GetFileActionForFD (STDERR_FILENO);
     stderr_path = GetFilePath (file_action, stderr_path);
 
-    // Create the NativeProcessLinux in launch mode.
-    native_process_sp.reset (new NativeProcessLinux ());
+    // Create the NativeProcessAndroid in launch mode.
+    native_process_sp.reset (new NativeProcessAndroid ());
 
     if (log)
     {
         int i = 0;
         for (const char **args = launch_info.GetArguments ().GetConstArgumentVector (); *args; ++args, ++i)
         {
-            log->Printf ("NativeProcessLinux::%s arg %d: \"%s\"", __FUNCTION__, i, *args ? *args : "nullptr");
+            log->Printf ("NativeProcessAndroid::%s arg %d: \"%s\"", __FUNCTION__, i, *args ? *args : "nullptr");
             ++i;
         }
     }
@@ -1242,7 +1252,7 @@ NativeProcessLinux::LaunchProcess (
         return error;
     }
 
-    reinterpret_cast<NativeProcessLinux*> (native_process_sp.get ())->LaunchInferior (
+    reinterpret_cast<NativeProcessAndroid*> (native_process_sp.get ())->LaunchInferior (
             exe_module,
             launch_info.GetArguments ().GetConstArgumentVector (),
             launch_info.GetEnvironmentEntries ().GetConstArgumentVector (),
@@ -1257,7 +1267,7 @@ NativeProcessLinux::LaunchProcess (
     {
         native_process_sp.reset ();
         if (log)
-            log->Printf ("NativeProcessLinux::%s failed to launch process: %s", __FUNCTION__, error.AsCString ());
+            log->Printf ("NativeProcessAndroid::%s failed to launch process: %s", __FUNCTION__, error.AsCString ());
         return error;
     }
 
@@ -1267,17 +1277,17 @@ NativeProcessLinux::LaunchProcess (
 }
 
 lldb_private::Error
-NativeProcessLinux::AttachToProcess (
+NativeProcessAndroid::AttachToProcess (
     lldb::pid_t pid,
     lldb_private::NativeProcessProtocol::NativeDelegate &native_delegate,
     NativeProcessProtocolSP &native_process_sp)
 {
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log && log->GetMask ().Test (POSIX_LOG_VERBOSE))
-        log->Printf ("NativeProcessLinux::%s(pid = %" PRIi64 ")", __FUNCTION__, pid);
+        log->Printf ("NativeProcessAndroid::%s(pid = %" PRIi64 ")", __FUNCTION__, pid);
 
-    // Grab the current platform architecture.  This should be Linux,
-    // since this code is only intended to run on a Linux host.
+    // Grab the current platform architecture.  This should be Android,
+    // since this code is only intended to run on a Android host.
     PlatformSP platform_sp (Platform::GetHostPlatform ());
     if (!platform_sp)
         return Error("failed to get a valid default platform");
@@ -1288,16 +1298,16 @@ NativeProcessLinux::AttachToProcess (
     if (!error.Success ())
         return error;
 
-    native_process_sp.reset (new NativeProcessLinux ());
+    native_process_sp.reset (new NativeProcessAndroid ());
 
     if (!native_process_sp->RegisterNativeDelegate (native_delegate))
     {
-        native_process_sp.reset (new NativeProcessLinux ());
+        native_process_sp.reset (new NativeProcessAndroid ());
         error.SetErrorStringWithFormat ("failed to register the native delegate");
         return error;
     }
 
-    reinterpret_cast<NativeProcessLinux*> (native_process_sp.get ())->AttachToInferior (pid, error);
+    reinterpret_cast<NativeProcessAndroid*> (native_process_sp.get ())->AttachToInferior (pid, error);
     if (!error.Success ())
     {
         native_process_sp.reset ();
@@ -1311,7 +1321,7 @@ NativeProcessLinux::AttachToProcess (
 // Public Instance Methods
 // -----------------------------------------------------------------------------
 
-NativeProcessLinux::NativeProcessLinux () :
+NativeProcessAndroid::NativeProcessAndroid () :
     NativeProcessProtocol (LLDB_INVALID_PROCESS_ID),
     m_arch (),
     m_operation (nullptr),
@@ -1331,11 +1341,11 @@ NativeProcessLinux::NativeProcessLinux () :
 }
 
 //------------------------------------------------------------------------------
-/// The basic design of the NativeProcessLinux is built around two threads.
+/// The basic design of the NativeProcessAndroid is built around two threads.
 ///
 /// One thread (@see SignalThread) simply blocks on a call to waitpid() looking
 /// for changes in the debugee state.  When a change is detected a
-/// ProcessMessage is sent to the associated ProcessLinux instance.  This thread
+/// ProcessMessage is sent to the associated ProcessAndroid instance.  This thread
 /// "drives" state changes in the debugger.
 ///
 /// The second thread (@see OperationThread) is responsible for two things 1)
@@ -1343,7 +1353,7 @@ NativeProcessLinux::NativeProcessLinux () :
 /// operations such as register reads/writes, stepping, etc.  See the comments
 /// on the Operation class for more info as to why this is needed.
 void
-NativeProcessLinux::LaunchInferior (
+NativeProcessAndroid::LaunchInferior (
     Module *module,
     const char *argv[],
     const char *envp[],
@@ -1395,28 +1405,28 @@ WAIT_AGAIN:
 
     // Finally, start monitoring the child process for change in state.
     m_monitor_thread = Host::StartMonitoringChildProcess(
-        NativeProcessLinux::MonitorCallback, this, GetID(), true);
+        NativeProcessAndroid::MonitorCallback, this, GetID(), true);
     if (!m_monitor_thread.IsJoinable())
     {
         error.SetErrorToGenericError();
-        error.SetErrorString ("Process attach failed to create monitor thread for NativeProcessLinux::MonitorCallback.");
+        error.SetErrorString ("Process attach failed to create monitor thread for NativeProcessAndroid::MonitorCallback.");
         return;
     }
 }
 
 void
-NativeProcessLinux::AttachToInferior (lldb::pid_t pid, lldb_private::Error &error)
+NativeProcessAndroid::AttachToInferior (lldb::pid_t pid, lldb_private::Error &error)
 {
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf ("NativeProcessLinux::%s (pid = %" PRIi64 ")", __FUNCTION__, pid);
+        log->Printf ("NativeProcessAndroid::%s (pid = %" PRIi64 ")", __FUNCTION__, pid);
 
     // We can use the Host for everything except the ResolveExecutable portion.
     PlatformSP platform_sp = Platform::GetHostPlatform ();
     if (!platform_sp)
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s (pid = %" PRIi64 "): no default platform set", __FUNCTION__, pid);
+            log->Printf ("NativeProcessAndroid::%s (pid = %" PRIi64 "): no default platform set", __FUNCTION__, pid);
         error.SetErrorString ("no default platform available");
     }
 
@@ -1436,7 +1446,7 @@ NativeProcessLinux::AttachToInferior (lldb::pid_t pid, lldb_private::Error &erro
     // Set the architecture to the exe architecture.
     m_arch = exe_module_sp->GetArchitecture();
     if (log)
-        log->Printf ("NativeProcessLinux::%s (pid = %" PRIi64 ") detected architecture %s", __FUNCTION__, pid, m_arch.GetArchitectureName ());
+        log->Printf ("NativeProcessAndroid::%s (pid = %" PRIi64 ") detected architecture %s", __FUNCTION__, pid, m_arch.GetArchitectureName ());
 
     m_pid = pid;
     SetState(eStateAttaching);
@@ -1473,16 +1483,16 @@ WAIT_AGAIN:
 
     // Finally, start monitoring the child process for change in state.
     m_monitor_thread = Host::StartMonitoringChildProcess (
-        NativeProcessLinux::MonitorCallback, this, GetID (), true);
+        NativeProcessAndroid::MonitorCallback, this, GetID (), true);
     if (!m_monitor_thread.IsJoinable())
     {
         error.SetErrorToGenericError ();
-        error.SetErrorString ("Process attach failed to create monitor thread for NativeProcessLinux::MonitorCallback.");
+        error.SetErrorString ("Process attach failed to create monitor thread for NativeProcessAndroid::MonitorCallback.");
         return;
     }
 }
 
-NativeProcessLinux::~NativeProcessLinux()
+NativeProcessAndroid::~NativeProcessAndroid()
 {
     StopMonitor();
 }
@@ -1491,9 +1501,9 @@ NativeProcessLinux::~NativeProcessLinux()
 // Thread setup and tear down.
 
 void
-NativeProcessLinux::StartLaunchOpThread(LaunchArgs *args, Error &error)
+NativeProcessAndroid::StartLaunchOpThread(LaunchArgs *args, Error &error)
 {
-    static const char *g_thread_name = "lldb.process.nativelinux.operation";
+    static const char *g_thread_name = "lldb.process.nativeAndroid.operation";
 
     if (m_operation_thread.IsJoinable())
         return;
@@ -1502,7 +1512,7 @@ NativeProcessLinux::StartLaunchOpThread(LaunchArgs *args, Error &error)
 }
 
 void *
-NativeProcessLinux::LaunchOpThread(void *arg)
+NativeProcessAndroid::LaunchOpThread(void *arg)
 {
     LaunchArgs *args = static_cast<LaunchArgs*>(arg);
 
@@ -1516,13 +1526,13 @@ NativeProcessLinux::LaunchOpThread(void *arg)
 }
 
 bool
-NativeProcessLinux::Launch(LaunchArgs *args)
+NativeProcessAndroid::Launch(LaunchArgs *args)
 {
     assert (args && "null args");
     if (!args)
         return false;
 
-    NativeProcessLinux *monitor = args->m_monitor;
+    NativeProcessAndroid *monitor = args->m_monitor;
     assert (monitor && "monitor is NULL");
     if (!monitor)
         return false;
@@ -1569,41 +1579,41 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     if (pid == 0)
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process preparing to fork", __FUNCTION__);
+            log->Printf ("NativeProcessAndroid::%s inferior process preparing to fork", __FUNCTION__);
 
         // Trace this process.
         if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process issuing PTRACE_TRACEME", __FUNCTION__);
+            log->Printf ("NativeProcessAndroid::%s inferior process issuing PTRACE_TRACEME", __FUNCTION__);
 
         if (PTRACE(PTRACE_TRACEME, 0, NULL, NULL, 0) < 0)
         {
             if (log)
-                log->Printf ("NativeProcessLinux::%s inferior process PTRACE_TRACEME failed", __FUNCTION__);
+                log->Printf ("NativeProcessAndroid::%s inferior process PTRACE_TRACEME failed", __FUNCTION__);
             exit(ePtraceFailed);
         }
 
         // Do not inherit setgid powers.
         if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process resetting gid", __FUNCTION__);
+            log->Printf ("NativeProcessAndroid::%s inferior process resetting gid", __FUNCTION__);
 
         if (setgid(getgid()) != 0)
         {
             if (log)
-                log->Printf ("NativeProcessLinux::%s inferior process setgid() failed", __FUNCTION__);
+                log->Printf ("NativeProcessAndroid::%s inferior process setgid() failed", __FUNCTION__);
             exit(eSetGidFailed);
         }
 
         // Attempt to have our own process group.
         // TODO verify if we really want this.
         if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process resetting process group", __FUNCTION__);
+            log->Printf ("NativeProcessAndroid::%s inferior process resetting process group", __FUNCTION__);
 
         if (setpgid(0, 0) != 0)
         {
             if (log)
             {
                 const int error_code = errno;
-                log->Printf ("NativeProcessLinux::%s inferior setpgid() failed, errno=%d (%s), continuing with existing process group %" PRIu64,
+                log->Printf ("NativeProcessAndroid::%s inferior setpgid() failed, errno=%d (%s), continuing with existing process group %" PRIu64,
                         __FUNCTION__,
                         error_code,
                         strerror (error_code),
@@ -1640,7 +1650,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
             if (old_personality == -1)
             {
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s retrieval of Linux personality () failed: %s. Cannot disable ASLR.", __FUNCTION__, strerror (errno));
+                    log->Printf ("NativeProcessAndroid::%s retrieval of Android personality () failed: %s. Cannot disable ASLR.", __FUNCTION__, strerror (errno));
             }
             else
             {
@@ -1648,13 +1658,13 @@ NativeProcessLinux::Launch(LaunchArgs *args)
                 if (new_personality == -1)
                 {
                     if (log)
-                        log->Printf ("NativeProcessLinux::%s setting of Linux personality () to disable ASLR failed, ignoring: %s", __FUNCTION__, strerror (errno));
+                        log->Printf ("NativeProcessAndroid::%s setting of Android personality () to disable ASLR failed, ignoring: %s", __FUNCTION__, strerror (errno));
 
                 }
                 else
                 {
                     if (log)
-                        log->Printf ("NativeProcessLinux::%s disabling ASLR: SUCCESS", __FUNCTION__);
+                        log->Printf ("NativeProcessAndroid::%s disabling ASLR: SUCCESS", __FUNCTION__);
 
                 }
             }
@@ -1675,7 +1685,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
         args->m_error.SetErrorToErrno();
 
         if (log)
-            log->Printf ("NativeProcessLinux::%s waitpid for inferior failed with %s", __FUNCTION__, args->m_error.AsCString ());
+            log->Printf ("NativeProcessAndroid::%s waitpid for inferior failed with %s", __FUNCTION__, args->m_error.AsCString ());
 
         // Mark the inferior as invalid.
         // FIXME this could really use a new state - eStateLaunchFailure.  For now, using eStateInvalid.
@@ -1717,7 +1727,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
 
         if (log)
         {
-            log->Printf ("NativeProcessLinux::%s inferior exited with status %d before issuing a STOP",
+            log->Printf ("NativeProcessAndroid::%s inferior exited with status %d before issuing a STOP",
                     __FUNCTION__,
                     WEXITSTATUS(status));
         }
@@ -1732,13 +1742,13 @@ NativeProcessLinux::Launch(LaunchArgs *args)
            "Could not sync with inferior process.");
 
     if (log)
-        log->Printf ("NativeProcessLinux::%s inferior started, now in stopped state", __FUNCTION__);
+        log->Printf ("NativeProcessAndroid::%s inferior started, now in stopped state", __FUNCTION__);
 
     if (!SetDefaultPtraceOpts(pid))
     {
         args->m_error.SetErrorToErrno();
         if (log)
-            log->Printf ("NativeProcessLinux::%s inferior failed to set default ptrace options: %s",
+            log->Printf ("NativeProcessAndroid::%s inferior failed to set default ptrace options: %s",
                     __FUNCTION__,
                     args->m_error.AsCString ());
 
@@ -1750,17 +1760,17 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     }
 
     // Release the master terminal descriptor and pass it off to the
-    // NativeProcessLinux instance.  Similarly stash the inferior pid.
+    // NativeProcessAndroid instance.  Similarly stash the inferior pid.
     monitor->m_terminal_fd = terminal.ReleaseMasterFileDescriptor();
     monitor->m_pid = pid;
 
     // Set the terminal fd to be in non blocking mode (it simplifies the
-    // implementation of ProcessLinux::GetSTDOUT to have a non-blocking
+    // implementation of ProcessAndroid::GetSTDOUT to have a non-blocking
     // descriptor to read from).
     if (!EnsureFDFlags(monitor->m_terminal_fd, O_NONBLOCK, args->m_error))
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s inferior EnsureFDFlags failed for ensuring terminal O_NONBLOCK setting: %s",
+            log->Printf ("NativeProcessAndroid::%s inferior EnsureFDFlags failed for ensuring terminal O_NONBLOCK setting: %s",
                     __FUNCTION__,
                     args->m_error.AsCString ());
 
@@ -1772,11 +1782,11 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     }
 
     if (log)
-        log->Printf ("NativeProcessLinux::%s() adding pid = %" PRIu64, __FUNCTION__, pid);
+        log->Printf ("NativeProcessAndroid::%s() adding pid = %" PRIu64, __FUNCTION__, pid);
 
     thread_sp = monitor->AddThread (static_cast<lldb::tid_t> (pid));
     assert (thread_sp && "AddThread() returned a nullptr thread");
-    reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (SIGSTOP);
+    reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetStoppedBySignal (SIGSTOP);
     monitor->SetCurrentThreadID (thread_sp->GetID ());
 
     // Let our process instance know the thread has stopped.
@@ -1787,11 +1797,11 @@ FINISH:
     {
         if (args->m_error.Success ())
         {
-            log->Printf ("NativeProcessLinux::%s inferior launching succeeded", __FUNCTION__);
+            log->Printf ("NativeProcessAndroid::%s inferior launching succeeded", __FUNCTION__);
         }
         else
         {
-            log->Printf ("NativeProcessLinux::%s inferior launching failed: %s",
+            log->Printf ("NativeProcessAndroid::%s inferior launching failed: %s",
                 __FUNCTION__,
                 args->m_error.AsCString ());
         }
@@ -1800,9 +1810,9 @@ FINISH:
 }
 
 void
-NativeProcessLinux::StartAttachOpThread(AttachArgs *args, lldb_private::Error &error)
+NativeProcessAndroid::StartAttachOpThread(AttachArgs *args, lldb_private::Error &error)
 {
-    static const char *g_thread_name = "lldb.process.linux.operation";
+    static const char *g_thread_name = "lldb.process.Android.operation";
 
     if (m_operation_thread.IsJoinable())
         return;
@@ -1811,7 +1821,7 @@ NativeProcessLinux::StartAttachOpThread(AttachArgs *args, lldb_private::Error &e
 }
 
 void *
-NativeProcessLinux::AttachOpThread(void *arg)
+NativeProcessAndroid::AttachOpThread(void *arg)
 {
     AttachArgs *args = static_cast<AttachArgs*>(arg);
 
@@ -1825,11 +1835,11 @@ NativeProcessLinux::AttachOpThread(void *arg)
 }
 
 bool
-NativeProcessLinux::Attach(AttachArgs *args)
+NativeProcessAndroid::Attach(AttachArgs *args)
 {
     lldb::pid_t pid = args->m_pid;
 
-    NativeProcessLinux *monitor = args->m_monitor;
+    NativeProcessAndroid *monitor = args->m_monitor;
     lldb::ThreadSP inferior;
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
@@ -1896,14 +1906,14 @@ NativeProcessLinux::Attach(AttachArgs *args)
 
 
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s() adding tid = %" PRIu64, __FUNCTION__, tid);
+                    log->Printf ("NativeProcessAndroid::%s() adding tid = %" PRIu64, __FUNCTION__, tid);
 
                 it->second = true;
 
                 // Create the thread, mark it as stopped.
                 NativeThreadProtocolSP thread_sp (monitor->AddThread (static_cast<lldb::tid_t> (tid)));
                 assert (thread_sp && "AddThread() returned a nullptr");
-                reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (SIGSTOP);
+                reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetStoppedBySignal (SIGSTOP);
                 monitor->SetCurrentThreadID (thread_sp->GetID ());
             }
 
@@ -1929,7 +1939,7 @@ NativeProcessLinux::Attach(AttachArgs *args)
 }
 
 bool
-NativeProcessLinux::SetDefaultPtraceOpts(lldb::pid_t pid)
+NativeProcessAndroid::SetDefaultPtraceOpts(lldb::pid_t pid)
 {
     long ptrace_opts = 0;
 
@@ -1981,7 +1991,7 @@ static int convert_pid_status_to_return_code (int status)
 
 // Main process monitoring waitpid-loop handler.
 bool
-NativeProcessLinux::MonitorCallback(void *callback_baton,
+NativeProcessAndroid::MonitorCallback(void *callback_baton,
                                 lldb::pid_t pid,
                                 bool exited,
                                 int signal,
@@ -1989,12 +1999,12 @@ NativeProcessLinux::MonitorCallback(void *callback_baton,
 {
     Log *log (GetLogIfAnyCategoriesSet (LIBLLDB_LOG_PROCESS));
 
-    NativeProcessLinux *const process = static_cast<NativeProcessLinux*>(callback_baton);
+    NativeProcessAndroid *const process = static_cast<NativeProcessAndroid*>(callback_baton);
     assert (process && "process is null");
     if (!process)
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " callback_baton was null, can't determine process to use", __FUNCTION__, pid);
+            log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " callback_baton was null, can't determine process to use", __FUNCTION__, pid);
         return true;
     }
 
@@ -2008,7 +2018,7 @@ NativeProcessLinux::MonitorCallback(void *callback_baton,
     if (exited)
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s() got exit signal, tid = %"  PRIu64 " (%s main thread)", __FUNCTION__, pid, is_main_thread ? "is" : "is not");
+            log->Printf ("NativeProcessAndroid::%s() got exit signal, tid = %"  PRIu64 " (%s main thread)", __FUNCTION__, pid, is_main_thread ? "is" : "is not");
 
         // This is a thread that exited.  Ensure we're not tracking it anymore.
         const bool thread_found = process->StopTrackingThread (pid);
@@ -2022,7 +2032,7 @@ NativeProcessLinux::MonitorCallback(void *callback_baton,
             if (!already_notified)
             {
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s() tid = %"  PRIu64 " handling main thread exit (%s), expected exit state already set but state was %s instead, setting exit state now", __FUNCTION__, pid, thread_found ? "stopped tracking thread metadata" : "thread metadata not found", StateAsCString (process->GetState ()));
+                    log->Printf ("NativeProcessAndroid::%s() tid = %"  PRIu64 " handling main thread exit (%s), expected exit state already set but state was %s instead, setting exit state now", __FUNCTION__, pid, thread_found ? "stopped tracking thread metadata" : "thread metadata not found", StateAsCString (process->GetState ()));
                 // The main thread exited.  We're done monitoring.  Report to delegate.
                 process->SetExitStatus (convert_pid_status_to_exit_type (status), convert_pid_status_to_return_code (status), nullptr, true);
 
@@ -2032,7 +2042,7 @@ NativeProcessLinux::MonitorCallback(void *callback_baton,
             else
             {
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s() tid = %"  PRIu64 " main thread now exited (%s)", __FUNCTION__, pid, thread_found ? "stopped tracking thread metadata" : "thread metadata not found");
+                    log->Printf ("NativeProcessAndroid::%s() tid = %"  PRIu64 " main thread now exited (%s)", __FUNCTION__, pid, thread_found ? "stopped tracking thread metadata" : "thread metadata not found");
             }
             return true;
         }
@@ -2042,7 +2052,7 @@ NativeProcessLinux::MonitorCallback(void *callback_baton,
             // thread exit, we would already have received the SIGTRAP | (PTRACE_EVENT_EXIT << 8) signal,
             // and we would have done an all-stop then.
             if (log)
-                log->Printf ("NativeProcessLinux::%s() tid = %"  PRIu64 " handling non-main thread exit (%s)", __FUNCTION__, pid, thread_found ? "stopped tracking thread metadata" : "thread metadata not found");
+                log->Printf ("NativeProcessAndroid::%s() tid = %"  PRIu64 " handling non-main thread exit (%s)", __FUNCTION__, pid, thread_found ? "stopped tracking thread metadata" : "thread metadata not found");
 
             // Not the main thread, we keep going.
             return false;
@@ -2074,7 +2084,7 @@ NativeProcessLinux::MonitorCallback(void *callback_baton,
             const bool thread_found = process->StopTrackingThread (pid);
 
             if (log)
-                log->Printf ("NativeProcessLinux::%s GetSignalInfo failed: %s, tid = %" PRIu64 ", signal = %d, status = %d (%s, %s, %s)",
+                log->Printf ("NativeProcessAndroid::%s GetSignalInfo failed: %s, tid = %" PRIu64 ", signal = %d, status = %d (%s, %s, %s)",
                              __FUNCTION__, strerror(ptrace_err), pid, signal, status, ptrace_err == ESRCH ? "thread/process killed" : "unknown reason", is_main_thread ? "is main thread" : "is not main thread", thread_found ? "thread metadata removed" : "thread metadata not found");
 
             if (is_main_thread)
@@ -2088,7 +2098,7 @@ NativeProcessLinux::MonitorCallback(void *callback_baton,
             {
                 // This thread was pulled out from underneath us.  Anything to do here? Do we want to do an all stop?
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 " non-main thread exit occurred, didn't tell delegate anything since thread disappeared out from underneath us", __FUNCTION__, process->GetID (), pid);
+                    log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " tid %" PRIu64 " non-main thread exit occurred, didn't tell delegate anything since thread disappeared out from underneath us", __FUNCTION__, process->GetID (), pid);
             }
         }
     }
@@ -2107,7 +2117,7 @@ NativeProcessLinux::MonitorCallback(void *callback_baton,
 }
 
 void
-NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
+NativeProcessAndroid::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
 {
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     const bool is_main_thread = (pid == GetID ());
@@ -2121,7 +2131,7 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
     if (!thread_sp)
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s() pid %" PRIu64 " no thread found for tid %" PRIu64, __FUNCTION__, GetID (), pid);
+            log->Printf ("NativeProcessAndroid::%s() pid %" PRIu64 " no thread found for tid %" PRIu64, __FUNCTION__, GetID (), pid);
     }
 
     switch (info->si_code)
@@ -2139,7 +2149,7 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
             tid = static_cast<lldb::tid_t> (event_message);
 
         if (log)
-            log->Printf ("NativeProcessLinux::%s() pid %" PRIu64 " received thread creation event for tid %" PRIu64, __FUNCTION__, pid, tid);
+            log->Printf ("NativeProcessAndroid::%s() pid %" PRIu64 " received thread creation event for tid %" PRIu64, __FUNCTION__, pid, tid);
 
         // If we don't track the thread yet: create it, mark as stopped.
         // If we do track it, this is the wait we needed.  Now resume the new thread.
@@ -2155,14 +2165,14 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
             // StopAllThreads
 
             // We can now resume the newly created thread since it is fully created.
-            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetRunning ();
+            reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetRunning ();
             Resume (tid, LLDB_INVALID_SIGNAL_NUMBER);
         }
         else
         {
             // Mark the thread as currently launching.  Need to wait for SIGTRAP clone on the main thread before
             // this thread is ready to go.
-            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetLaunching ();
+            reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetLaunching ();
         }
 
         // In all cases, we can resume the main thread here.
@@ -2175,7 +2185,7 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
         NativeThreadProtocolSP main_thread_sp;
 
         if (log)
-            log->Printf ("NativeProcessLinux::%s() received exec event, code = %d", __FUNCTION__, info->si_code ^ SIGTRAP);
+            log->Printf ("NativeProcessAndroid::%s() received exec event, code = %d", __FUNCTION__, info->si_code ^ SIGTRAP);
 
         // Remove all but the main thread here.
         // FIXME check if we really need to do this - how does ptrace behave under exec when multiple threads were present
@@ -2185,7 +2195,7 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
             Mutex::Locker locker (m_threads_mutex);
 
             if (log)
-                log->Printf ("NativeProcessLinux::%s exec received, stop tracking all but main thread", __FUNCTION__);
+                log->Printf ("NativeProcessAndroid::%s exec received, stop tracking all but main thread", __FUNCTION__);
 
             for (auto thread_sp : m_threads)
             {
@@ -2194,12 +2204,12 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
                 {
                     main_thread_sp = thread_sp;
                     if (log)
-                        log->Printf ("NativeProcessLinux::%s found main thread with tid %" PRIu64 ", keeping", __FUNCTION__, main_thread_sp->GetID ());
+                        log->Printf ("NativeProcessAndroid::%s found main thread with tid %" PRIu64 ", keeping", __FUNCTION__, main_thread_sp->GetID ());
                 }
                 else
                 {
                     if (log)
-                        log->Printf ("NativeProcessLinux::%s discarding non-main-thread tid %" PRIu64 " due to exec", __FUNCTION__, thread_sp->GetID ());
+                        log->Printf ("NativeProcessAndroid::%s discarding non-main-thread tid %" PRIu64 " due to exec", __FUNCTION__, thread_sp->GetID ());
                 }
             }
 
@@ -2209,13 +2219,13 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
             {
                 m_threads.push_back (main_thread_sp);
                 SetCurrentThreadID (main_thread_sp->GetID ());
-                reinterpret_cast<NativeThreadLinux*>(main_thread_sp.get())->SetStoppedByExec ();
+                reinterpret_cast<NativeThreadAndroid*>(main_thread_sp.get())->SetStoppedByExec ();
             }
             else
             {
                 SetCurrentThreadID (LLDB_INVALID_THREAD_ID);
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s pid %" PRIu64 "no main thread found, discarded all threads, we're in a no-thread state!", __FUNCTION__, GetID ());
+                    log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 "no main thread found, discarded all threads, we're in a no-thread state!", __FUNCTION__, GetID ());
             }
         }
 
@@ -2240,7 +2250,7 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
 
         if (log)
         {
-            log->Printf ("NativeProcessLinux::%s() received PTRACE_EVENT_EXIT, data = %lx (WIFEXITED=%s,WIFSIGNALED=%s), pid = %" PRIu64 " (%s)",
+            log->Printf ("NativeProcessAndroid::%s() received PTRACE_EVENT_EXIT, data = %lx (WIFEXITED=%s,WIFSIGNALED=%s), pid = %" PRIu64 " (%s)",
                          __FUNCTION__,
                          data, WIFEXITED (data) ? "true" : "false", WIFSIGNALED (data) ? "true" : "false",
                          pid,
@@ -2249,11 +2259,11 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
 
         // Set the thread to exited.
         if (thread_sp)
-            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetExited ();
+            reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetExited ();
         else
         {
             if (log)
-                log->Printf ("NativeProcessLinux::%s() pid %" PRIu64 " failed to retrieve thread for tid %" PRIu64", cannot set thread state", __FUNCTION__, GetID (), pid);
+                log->Printf ("NativeProcessAndroid::%s() pid %" PRIu64 " failed to retrieve thread for tid %" PRIu64", cannot set thread state", __FUNCTION__, GetID (), pid);
         }
 
         if (is_main_thread)
@@ -2274,17 +2284,17 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
     case TRAP_TRACE:
         // We receive this on single stepping.
         if (log)
-            log->Printf ("NativeProcessLinux::%s() received trace event, pid = %" PRIu64 " (single stepping)", __FUNCTION__, pid);
+            log->Printf ("NativeProcessAndroid::%s() received trace event, pid = %" PRIu64 " (single stepping)", __FUNCTION__, pid);
 
         if (thread_sp)
         {
-            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (SIGTRAP);
+            reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetStoppedBySignal (SIGTRAP);
             SetCurrentThreadID (thread_sp->GetID ());
         }
         else
         {
             if (log)
-                log->Printf ("NativeProcessLinux::%s() pid %" PRIu64 " tid %" PRIu64 " single stepping received trace but thread not found", __FUNCTION__, GetID (), pid);
+                log->Printf ("NativeProcessAndroid::%s() pid %" PRIu64 " tid %" PRIu64 " single stepping received trace but thread not found", __FUNCTION__, GetID (), pid);
         }
 
         // Tell the process we have a stop (from single stepping).
@@ -2294,23 +2304,23 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
     case SI_KERNEL:
     case TRAP_BRKPT:
         if (log)
-            log->Printf ("NativeProcessLinux::%s() received breakpoint event, pid = %" PRIu64, __FUNCTION__, pid);
+            log->Printf ("NativeProcessAndroid::%s() received breakpoint event, pid = %" PRIu64, __FUNCTION__, pid);
 
         // Mark the thread as stopped at breakpoint.
         if (thread_sp)
         {
-            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (SIGTRAP);
+            reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetStoppedBySignal (SIGTRAP);
             Error error = FixupBreakpointPCAsNeeded (thread_sp);
             if (error.Fail ())
             {
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s() pid = %" PRIu64 " fixup: %s", __FUNCTION__, pid, error.AsCString ());
+                    log->Printf ("NativeProcessAndroid::%s() pid = %" PRIu64 " fixup: %s", __FUNCTION__, pid, error.AsCString ());
             }
         }
         else
         {
             if (log)
-                log->Printf ("NativeProcessLinux::%s()  pid = %" PRIu64 ": warning, cannot process software breakpoint since no thread metadata", __FUNCTION__, pid);
+                log->Printf ("NativeProcessAndroid::%s()  pid = %" PRIu64 ": warning, cannot process software breakpoint since no thread metadata", __FUNCTION__, pid);
         }
 
 
@@ -2321,16 +2331,16 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
 
     case TRAP_HWBKPT:
         if (log)
-            log->Printf ("NativeProcessLinux::%s() received watchpoint event, pid = %" PRIu64, __FUNCTION__, pid);
+            log->Printf ("NativeProcessAndroid::%s() received watchpoint event, pid = %" PRIu64, __FUNCTION__, pid);
 
         // Mark the thread as stopped at watchpoint.
         // The address is at (lldb::addr_t)info->si_addr if we need it.
         if (thread_sp)
-            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (SIGTRAP);
+            reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetStoppedBySignal (SIGTRAP);
         else
         {
             if (log)
-                log->Printf ("NativeProcessLinux::%s() pid %" PRIu64 " tid %" PRIu64 ": warning, cannot process hardware breakpoint since no thread metadata", __FUNCTION__, GetID (), pid);
+                log->Printf ("NativeProcessAndroid::%s() pid %" PRIu64 " tid %" PRIu64 ": warning, cannot process hardware breakpoint since no thread metadata", __FUNCTION__, GetID (), pid);
         }
 
         // Tell the process we have a stop from this thread.
@@ -2341,7 +2351,7 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
     case SIGTRAP:
     case (SIGTRAP | 0x80):
         if (log)
-            log->Printf ("NativeProcessLinux::%s() received system call stop event, pid %" PRIu64 "tid %" PRIu64, __FUNCTION__, GetID (), pid);
+            log->Printf ("NativeProcessAndroid::%s() received system call stop event, pid %" PRIu64 "tid %" PRIu64, __FUNCTION__, GetID (), pid);
         // Ignore these signals until we know more about them.
         Resume(pid, 0);
         break;
@@ -2349,14 +2359,14 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
     default:
         assert(false && "Unexpected SIGTRAP code!");
         if (log)
-            log->Printf ("NativeProcessLinux::%s() pid %" PRIu64 "tid %" PRIu64 " received unhandled SIGTRAP code: 0x%" PRIx64, __FUNCTION__, GetID (), pid, static_cast<uint64_t> (SIGTRAP | (PTRACE_EVENT_CLONE << 8)));
+            log->Printf ("NativeProcessAndroid::%s() pid %" PRIu64 "tid %" PRIu64 " received unhandled SIGTRAP code: 0x%" PRIx64, __FUNCTION__, GetID (), pid, static_cast<uint64_t> (SIGTRAP | (PTRACE_EVENT_CLONE << 8)));
         break;
         
     }
 }
 
 void
-NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool exited)
+NativeProcessAndroid::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool exited)
 {
     assert (info && "null info");
     if (!info)
@@ -2369,7 +2379,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
 
     // POSIX says that process behaviour is undefined after it ignores a SIGFPE,
     // SIGILL, SIGSEGV, or SIGBUS *unless* that signal was generated by a
-    // kill(2) or raise(3).  Similarly for tgkill(2) on Linux.
+    // kill(2) or raise(3).  Similarly for tgkill(2) on Android.
     //
     // IOW, user generated signals never generate what we consider to be a
     // "crash".
@@ -2381,14 +2391,14 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
     if (!thread_sp)
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s() pid %" PRIu64 " no thread found for tid %" PRIu64, __FUNCTION__, GetID (), pid);
+            log->Printf ("NativeProcessAndroid::%s() pid %" PRIu64 " no thread found for tid %" PRIu64, __FUNCTION__, GetID (), pid);
     }
 
     // Handle the signal.
     if (info->si_code == SI_TKILL || info->si_code == SI_USER)
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s() received signal %s (%d) with code %s, (siginfo pid = %d (%s), waitpid pid = %" PRIu64 ")",
+            log->Printf ("NativeProcessAndroid::%s() received signal %s (%d) with code %s, (siginfo pid = %d (%s), waitpid pid = %" PRIu64 ")",
                             __FUNCTION__,
                             GetUnixSignals ().GetSignalAsCString (signo),
                             signo,
@@ -2404,7 +2414,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
         // A new thread creation is being signaled.  This is one of two parts that come in
         // a non-deterministic order.  pid is the thread id.
         if (log)
-            log->Printf ("NativeProcessLinux::%s() pid = %" PRIu64 " tid %" PRIu64 ": new thread notification",
+            log->Printf ("NativeProcessAndroid::%s() pid = %" PRIu64 " tid %" PRIu64 ": new thread notification",
                      __FUNCTION__, GetID (), pid);
 
         // Did we already create the thread?
@@ -2416,14 +2426,14 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
         if (!created_now)
         {
             // We can now resume this thread up since it is fully created.
-            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetRunning ();
+            reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetRunning ();
             Resume (thread_sp->GetID (), LLDB_INVALID_SIGNAL_NUMBER);
         }
         else
         {
             // Mark the thread as currently launching.  Need to wait for SIGTRAP clone on the main thread before
             // this thread is ready to go.
-            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetLaunching ();
+            reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetLaunching ();
         }
 
         // Done handling.
@@ -2437,7 +2447,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
         if (thread_sp)
         {
             // An inferior thread just stopped.  Mark it as such.
-            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (signo);
+            reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetStoppedBySignal (signo);
             SetCurrentThreadID (thread_sp->GetID ());
 
             // Remove this tid from the wait-for-stop set.
@@ -2446,7 +2456,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
             auto removed_count = m_wait_for_stop_tids.erase (thread_sp->GetID ());
             if (removed_count < 1)
             {
-                log->Printf ("NativeProcessLinux::%s() pid = %" PRIu64 " tid %" PRIu64 ": tgkill()-stopped thread not in m_wait_for_stop_tids",
+                log->Printf ("NativeProcessAndroid::%s() pid = %" PRIu64 " tid %" PRIu64 ": tgkill()-stopped thread not in m_wait_for_stop_tids",
                              __FUNCTION__, GetID (), thread_sp->GetID ());
 
             }
@@ -2458,7 +2468,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
             {
                 if (log)
                 {
-                    log->Printf ("NativeProcessLinux::%s() pid %" PRIu64 " tid %" PRIu64 ", setting process state to stopped now that all tids marked for stop have completed",
+                    log->Printf ("NativeProcessAndroid::%s() pid %" PRIu64 " tid %" PRIu64 ", setting process state to stopped now that all tids marked for stop have completed",
                                  __FUNCTION__,
                                  GetID (),
                                  pid);
@@ -2472,7 +2482,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
     }
 
     if (log)
-        log->Printf ("NativeProcessLinux::%s() received signal %s", __FUNCTION__, GetUnixSignals ().GetSignalAsCString (signo));
+        log->Printf ("NativeProcessAndroid::%s() received signal %s", __FUNCTION__, GetUnixSignals ().GetSignalAsCString (signo));
 
     switch (signo)
     {
@@ -2490,7 +2500,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
                 // Send a stop to the debugger.
                 if (thread_sp)
                 {
-                    reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (signo);
+                    reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetStoppedBySignal (signo);
                     SetCurrentThreadID (thread_sp->GetID ());
                 }
                 SetState (StateType::eStateStopped, true);
@@ -2501,7 +2511,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
                 {
                     // FIXME figure out what type this is.
                     const uint64_t exception_type = static_cast<uint64_t> (SIGSEGV);
-                    reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetCrashedWithException (exception_type, fault_addr);
+                    reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetCrashedWithException (exception_type, fault_addr);
                 }
                 SetState (StateType::eStateCrashed, true);
             }
@@ -2521,7 +2531,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
                 // Send a stop to the debugger.
                 if (thread_sp)
                 {
-                    reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (signo);
+                    reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetStoppedBySignal (signo);
                     SetCurrentThreadID (thread_sp->GetID ());
                 }
                 SetState (StateType::eStateStopped, true);
@@ -2532,7 +2542,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
                 {
                     // FIXME figure out how to report exit by signal correctly.
                     const uint64_t exception_type = static_cast<uint64_t> (SIGABRT);
-                    reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetCrashedWithException (exception_type, fault_addr);
+                    reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ())->SetCrashedWithException (exception_type, fault_addr);
                 }
                 SetState (StateType::eStateCrashed, true);
             }
@@ -2544,9 +2554,9 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
             if (log)
             {
                 if (is_from_llgs)
-                    log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " received SIGSTOP from llgs, most likely an interrupt", __FUNCTION__, GetID (), pid);
+                    log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " received SIGSTOP from llgs, most likely an interrupt", __FUNCTION__, GetID (), pid);
                 else
-                    log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " received SIGSTOP from outside of debugger", __FUNCTION__, GetID (), pid);
+                    log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " received SIGSTOP from outside of debugger", __FUNCTION__, GetID (), pid);
             }
 
             // Save group stop tids to wait for.
@@ -2558,13 +2568,13 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
     default:
         {
             if (log)
-                log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " resuming thread with signal %s (%d)", __FUNCTION__, GetID (), pid, GetUnixSignals().GetSignalAsCString (signo), signo);
+                log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " resuming thread with signal %s (%d)", __FUNCTION__, GetID (), pid, GetUnixSignals().GetSignalAsCString (signo), signo);
 
             // Pass the signal on to the inferior.
             const bool resume_success = Resume (pid, signo);
 
             if (log)
-                log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " resume %s", __FUNCTION__, GetID (), pid, resume_success ? "SUCCESS" : "FAILURE");
+                log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " resume %s", __FUNCTION__, GetID (), pid, resume_success ? "SUCCESS" : "FAILURE");
 
         }
         break;
@@ -2572,7 +2582,7 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
 }
 
 void
-NativeProcessLinux::SetGroupStopTids (lldb::tid_t signaled_thread_tid, int signo)
+NativeProcessAndroid::SetGroupStopTids (lldb::tid_t signaled_thread_tid, int signo)
 {
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
 
@@ -2583,7 +2593,7 @@ NativeProcessLinux::SetGroupStopTids (lldb::tid_t signaled_thread_tid, int signo
         {
             Mutex::Locker locker (m_wait_for_group_stop_tids_mutex);
             if (log)
-                log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " loading up known threads in set%s",
+                log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " loading up known threads in set%s",
                              __FUNCTION__,
                              GetID (),
                              signaled_thread_tid,
@@ -2594,7 +2604,7 @@ NativeProcessLinux::SetGroupStopTids (lldb::tid_t signaled_thread_tid, int signo
             for (auto thread_sp : m_threads)
             {
                 int unused_signo = LLDB_INVALID_SIGNAL_NUMBER;
-                if (thread_sp && !((NativeThreadLinux*)thread_sp.get())->IsStopped (&unused_signo))
+                if (thread_sp && !((NativeThreadAndroid*)thread_sp.get())->IsStopped (&unused_signo))
                 {
                     // Wait on this thread for a group stop before we notify the delegate about the process state change.
                     m_wait_for_group_stop_tids.insert (thread_sp->GetID ());
@@ -2608,7 +2618,7 @@ NativeProcessLinux::SetGroupStopTids (lldb::tid_t signaled_thread_tid, int signo
 }
 
 void
-NativeProcessLinux::OnGroupStop (lldb::tid_t tid)
+NativeProcessAndroid::OnGroupStop (lldb::tid_t tid)
 {
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
     bool should_tell_delegate = false;
@@ -2623,7 +2633,7 @@ NativeProcessLinux::OnGroupStop (lldb::tid_t tid)
             // Remove this thread from the set.
             auto remove_result = m_wait_for_group_stop_tids.erase (tid);
             if (log)
-                log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " tried to remove tid from group-stop set: %s",
+                log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " tried to remove tid from group-stop set: %s",
                              __FUNCTION__,
                              GetID (),
                              tid,
@@ -2633,12 +2643,12 @@ NativeProcessLinux::OnGroupStop (lldb::tid_t tid)
             NativeThreadProtocolSP thread_sp = GetThreadByIDUnlocked (tid);
             if (thread_sp)
             {
-                NativeThreadLinux *const linux_thread = static_cast<NativeThreadLinux*> (thread_sp.get ());
+                NativeThreadAndroid *const Android_thread = static_cast<NativeThreadAndroid*> (thread_sp.get ());
                 if (thread_sp->GetID () == m_group_stop_signal_tid)
                 {
-                    linux_thread->SetStoppedBySignal (m_group_stop_signal);
+                    Android_thread->SetStoppedBySignal (m_group_stop_signal);
                     if (log)
-                        log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " set group stop tid to state 'stopped by signal %d'",
+                        log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " set group stop tid to state 'stopped by signal %d'",
                                      __FUNCTION__,
                                      GetID (),
                                      tid,
@@ -2647,10 +2657,10 @@ NativeProcessLinux::OnGroupStop (lldb::tid_t tid)
                 else
                 {
                     int stopping_signal = LLDB_INVALID_SIGNAL_NUMBER;
-                    if (linux_thread->IsStopped (&stopping_signal))
+                    if (Android_thread->IsStopped (&stopping_signal))
                     {
                         if (log)
-                            log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " thread is already stopped with signal %d, not clearing",
+                            log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " thread is already stopped with signal %d, not clearing",
                                          __FUNCTION__,
                                          GetID (),
                                          tid,
@@ -2659,9 +2669,9 @@ NativeProcessLinux::OnGroupStop (lldb::tid_t tid)
                     }
                     else
                     {
-                        linux_thread->SetStoppedBySignal (0);
+                        Android_thread->SetStoppedBySignal (0);
                         if (log)
-                            log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " set stopped by signal with signal 0 (i.e. debugger-initiated stop)",
+                            log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " set stopped by signal with signal 0 (i.e. debugger-initiated stop)",
                                          __FUNCTION__,
                                          GetID (),
                                          tid);
@@ -2672,7 +2682,7 @@ NativeProcessLinux::OnGroupStop (lldb::tid_t tid)
             else
             {
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " WARNING failed to find thread metadata for tid",
+                    log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " WARNING failed to find thread metadata for tid",
                                  __FUNCTION__,
                                  GetID (),
                                  tid);
@@ -2683,7 +2693,7 @@ NativeProcessLinux::OnGroupStop (lldb::tid_t tid)
             if (m_wait_for_group_stop_tids.empty ())
             {
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " done waiting for group stop, will notify delegate of process state change",
+                    log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " done waiting for group stop, will notify delegate of process state change",
                                  __FUNCTION__,
                                  GetID (),
                                  tid);
@@ -2702,7 +2712,7 @@ NativeProcessLinux::OnGroupStop (lldb::tid_t tid)
     if (should_tell_delegate)
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s pid = %" PRIu64 " tid %" PRIu64 " done waiting for group stop, notifying delegate of process state change",
+            log->Printf ("NativeProcessAndroid::%s pid = %" PRIu64 " tid %" PRIu64 " done waiting for group stop, notifying delegate of process state change",
                          __FUNCTION__,
                          GetID (),
                          tid);
@@ -2711,13 +2721,13 @@ NativeProcessLinux::OnGroupStop (lldb::tid_t tid)
 }
 
 Error
-NativeProcessLinux::Resume (const ResumeActionList &resume_actions)
+NativeProcessAndroid::Resume (const ResumeActionList &resume_actions)
 {
     Error error;
 
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS | LIBLLDB_LOG_THREAD));
     if (log)
-        log->Printf ("NativeProcessLinux::%s called: pid %" PRIu64, __FUNCTION__, GetID ());
+        log->Printf ("NativeProcessAndroid::%s called: pid %" PRIu64, __FUNCTION__, GetID ());
 
     int run_thread_count = 0;
     int stop_thread_count = 0;
@@ -2729,14 +2739,14 @@ NativeProcessLinux::Resume (const ResumeActionList &resume_actions)
     for (auto thread_sp : m_threads)
     {
         assert (thread_sp && "thread list should not contain NULL threads");
-        NativeThreadLinux *const linux_thread_p = reinterpret_cast<NativeThreadLinux*> (thread_sp.get ());
+        NativeThreadAndroid *const Android_thread_p = reinterpret_cast<NativeThreadAndroid*> (thread_sp.get ());
 
         const ResumeAction *const action = resume_actions.GetActionForThread (thread_sp->GetID (), true);
         assert (action && "NULL ResumeAction returned for thread during Resume ()");
 
         if (log)
         {
-            log->Printf ("NativeProcessLinux::%s processing resume action state %s for pid %" PRIu64 " tid %" PRIu64, 
+            log->Printf ("NativeProcessAndroid::%s processing resume action state %s for pid %" PRIu64 " tid %" PRIu64,
                     __FUNCTION__, StateAsCString (action->state), GetID (), thread_sp->GetID ());
         }
 
@@ -2744,7 +2754,7 @@ NativeProcessLinux::Resume (const ResumeActionList &resume_actions)
         {
         case eStateRunning:
             // Run the thread, possibly feeding it the signal.
-            linux_thread_p->SetRunning ();
+            Android_thread_p->SetRunning ();
             if (action->signal > 0)
             {
                 // Resume the thread and deliver the given signal,
@@ -2763,17 +2773,17 @@ NativeProcessLinux::Resume (const ResumeActionList &resume_actions)
         case eStateStepping:
             // Note: if we have multiple threads, we may need to stop
             // the other threads first, then step this one.
-            linux_thread_p->SetStepping ();
+            Android_thread_p->SetStepping ();
             if (SingleStep (thread_sp->GetID (), 0))
             {
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 " single step succeeded",
+                    log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " tid %" PRIu64 " single step succeeded",
                                  __FUNCTION__, GetID (), thread_sp->GetID ());
             }
             else
             {
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 " single step failed",
+                    log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " tid %" PRIu64 " single step failed",
                                  __FUNCTION__, GetID (), thread_sp->GetID ());
             }
             ++step_thread_count;
@@ -2781,20 +2791,20 @@ NativeProcessLinux::Resume (const ResumeActionList &resume_actions)
 
         case eStateSuspended:
         case eStateStopped:
-            if (!StateIsStoppedState (linux_thread_p->GetState (), false))
+            if (!StateIsStoppedState (Android_thread_p->GetState (), false))
                 new_stop_threads.push_back (thread_sp);
             else
             {
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s no need to stop pid %" PRIu64 " tid %" PRIu64 ", thread state already %s",
-                                 __FUNCTION__, GetID (), thread_sp->GetID (), StateAsCString (linux_thread_p->GetState ()));
+                    log->Printf ("NativeProcessAndroid::%s no need to stop pid %" PRIu64 " tid %" PRIu64 ", thread state already %s",
+                                 __FUNCTION__, GetID (), thread_sp->GetID (), StateAsCString (Android_thread_p->GetState ()));
             }
 
             ++stop_thread_count;
             break;
 
         default:
-            return Error ("NativeProcessLinux::%s (): unexpected state %s specified for pid %" PRIu64 ", tid %" PRIu64,
+            return Error ("NativeProcessAndroid::%s (): unexpected state %s specified for pid %" PRIu64 ", tid %" PRIu64,
                     __FUNCTION__, StateAsCString (action->state), GetID (), thread_sp->GetID ());
         }
     }
@@ -2816,7 +2826,7 @@ NativeProcessLinux::Resume (const ResumeActionList &resume_actions)
             {
                 // tgkill failed.
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s error: tgkill SIGSTOP for pid %" PRIu64 " tid %" PRIu64 "failed, retval %d",
+                    log->Printf ("NativeProcessAndroid::%s error: tgkill SIGSTOP for pid %" PRIu64 " tid %" PRIu64 "failed, retval %d",
                                  __FUNCTION__, GetID (), thread_sp->GetID (), result);
             }
             else
@@ -2824,7 +2834,7 @@ NativeProcessLinux::Resume (const ResumeActionList &resume_actions)
                 // tgkill succeeded.  Don't mark the thread state, though.  Let the signal
                 // handling mark it.
                 if (log)
-                    log->Printf ("NativeProcessLinux::%s tgkill SIGSTOP for pid %" PRIu64 " tid %" PRIu64 " succeeded",
+                    log->Printf ("NativeProcessAndroid::%s tgkill SIGSTOP for pid %" PRIu64 " tid %" PRIu64 " succeeded",
                                  __FUNCTION__, GetID (), thread_sp->GetID ());
 
                 // Add it to the set of threads we expect to signal a stop.
@@ -2838,7 +2848,7 @@ NativeProcessLinux::Resume (const ResumeActionList &resume_actions)
 }
 
 Error
-NativeProcessLinux::Halt ()
+NativeProcessAndroid::Halt ()
 {
     Error error;
 
@@ -2854,7 +2864,7 @@ NativeProcessLinux::Halt ()
 }
 
 Error
-NativeProcessLinux::Detach ()
+NativeProcessAndroid::Detach ()
 {
     Error error;
 
@@ -2870,13 +2880,13 @@ NativeProcessLinux::Detach ()
 }
 
 Error
-NativeProcessLinux::Signal (int signo)
+NativeProcessAndroid::Signal (int signo)
 {
     Error error;
 
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf ("NativeProcessLinux::%s: sending signal %d (%s) to pid %" PRIu64, 
+        log->Printf ("NativeProcessAndroid::%s: sending signal %d (%s) to pid %" PRIu64,
                 __FUNCTION__, signo,  GetUnixSignals ().GetSignalAsCString (signo), GetID ());
 
     if (kill(GetID(), signo))
@@ -2886,11 +2896,11 @@ NativeProcessLinux::Signal (int signo)
 }
 
 Error
-NativeProcessLinux::Kill ()
+NativeProcessAndroid::Kill ()
 {
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf ("NativeProcessLinux::%s called for PID %" PRIu64, __FUNCTION__, GetID ());
+        log->Printf ("NativeProcessAndroid::%s called for PID %" PRIu64, __FUNCTION__, GetID ());
 
     Error error;
 
@@ -2903,7 +2913,7 @@ NativeProcessLinux::Kill ()
         case StateType::eStateUnloaded:
             // Nothing to do - the process is already dead.
             if (log)
-                log->Printf ("NativeProcessLinux::%s ignored for PID %" PRIu64 " due to current state: %s", __FUNCTION__, GetID (), StateAsCString (m_state));
+                log->Printf ("NativeProcessAndroid::%s ignored for PID %" PRIu64 " due to current state: %s", __FUNCTION__, GetID (), StateAsCString (m_state));
             return error;
 
         case StateType::eStateConnected:
@@ -2992,7 +3002,7 @@ ParseMemoryRegionInfoFromProcMapsLine (const std::string &maps_line, MemoryRegio
 }
 
 Error
-NativeProcessLinux::GetMemoryRegionInfo (lldb::addr_t load_addr, MemoryRegionInfo &range_info)
+NativeProcessAndroid::GetMemoryRegionInfo (lldb::addr_t load_addr, MemoryRegionInfo &range_info)
 {
     // FIXME review that the final memory region returned extends to the end of the virtual address space,
     // with no perms if it is not mapped.
@@ -3029,7 +3039,7 @@ NativeProcessLinux::GetMemoryRegionInfo (lldb::addr_t load_addr, MemoryRegionInf
                  else
                  {
                      if (log)
-                         log->Printf ("NativeProcessLinux::%s failed to parse proc maps line '%s': %s", __FUNCTION__, line.c_str (), error.AsCString ());
+                         log->Printf ("NativeProcessAndroid::%s failed to parse proc maps line '%s': %s", __FUNCTION__, line.c_str (), error.AsCString ());
                      return false;
                  }
              });
@@ -3045,14 +3055,14 @@ NativeProcessLinux::GetMemoryRegionInfo (lldb::addr_t load_addr, MemoryRegionInf
             // No entries after attempting to read them.  This shouldn't happen if /proc/{pid}/maps
             // is supported.  Assume we don't support map entries via procfs.
             if (log)
-                log->Printf ("NativeProcessLinux::%s failed to find any procfs maps entries, assuming no support for memory region metadata retrieval", __FUNCTION__);
+                log->Printf ("NativeProcessAndroid::%s failed to find any procfs maps entries, assuming no support for memory region metadata retrieval", __FUNCTION__);
             m_supports_mem_region = LazyBool::eLazyBoolNo;
             error.SetErrorString ("not supported");
             return error;
         }
 
         if (log)
-            log->Printf ("NativeProcessLinux::%s read %" PRIu64 " memory region entries from /proc/%" PRIu64 "/maps", __FUNCTION__, static_cast<uint64_t> (m_mem_region_cache.size ()), GetID ());
+            log->Printf ("NativeProcessAndroid::%s read %" PRIu64 " memory region entries from /proc/%" PRIu64 "/maps", __FUNCTION__, static_cast<uint64_t> (m_mem_region_cache.size ()), GetID ());
 
         // We support memory retrieval, remember that.
         m_supports_mem_region = LazyBool::eLazyBoolYes;
@@ -3060,7 +3070,7 @@ NativeProcessLinux::GetMemoryRegionInfo (lldb::addr_t load_addr, MemoryRegionInf
     else
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s reusing %" PRIu64 " cached memory region entries", __FUNCTION__, static_cast<uint64_t> (m_mem_region_cache.size ()));
+            log->Printf ("NativeProcessAndroid::%s reusing %" PRIu64 " cached memory region entries", __FUNCTION__, static_cast<uint64_t> (m_mem_region_cache.size ()));
     }
 
     lldb::addr_t prev_base_address = 0;
@@ -3100,28 +3110,28 @@ NativeProcessLinux::GetMemoryRegionInfo (lldb::addr_t load_addr, MemoryRegionInf
     error.SetErrorString ("address comes after final region");
 
     if (log)
-        log->Printf ("NativeProcessLinux::%s failed to find map entry for address 0x%" PRIx64 ": %s", __FUNCTION__, load_addr, error.AsCString ());
+        log->Printf ("NativeProcessAndroid::%s failed to find map entry for address 0x%" PRIx64 ": %s", __FUNCTION__, load_addr, error.AsCString ());
 
     return error;
 }
 
 void
-NativeProcessLinux::DoStopIDBumped (uint32_t newBumpId)
+NativeProcessAndroid::DoStopIDBumped (uint32_t newBumpId)
 {
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf ("NativeProcessLinux::%s(newBumpId=%" PRIu32 ") called", __FUNCTION__, newBumpId);
+        log->Printf ("NativeProcessAndroid::%s(newBumpId=%" PRIu32 ") called", __FUNCTION__, newBumpId);
 
     {
         Mutex::Locker locker (m_mem_region_cache_mutex);
         if (log)
-            log->Printf ("NativeProcessLinux::%s clearing %" PRIu64 " entries from the cache", __FUNCTION__, static_cast<uint64_t> (m_mem_region_cache.size ()));
+            log->Printf ("NativeProcessAndroid::%s clearing %" PRIu64 " entries from the cache", __FUNCTION__, static_cast<uint64_t> (m_mem_region_cache.size ()));
         m_mem_region_cache.clear ();
     }
 }
 
 Error
-NativeProcessLinux::AllocateMemory (
+NativeProcessAndroid::AllocateMemory (
     lldb::addr_t size,
     uint32_t permissions,
     lldb::addr_t &addr)
@@ -3142,7 +3152,7 @@ NativeProcessLinux::AllocateMemory (
     if (permissions & lldb::ePermissionsExecutable)
         prot |= eMmapProtExec;
 
-    // TODO implement this directly in NativeProcessLinux
+    // TODO implement this directly in NativeProcessAndroid
     // (and lift to NativeProcessPOSIX if/when that class is
     // refactored out).
     if (InferiorCallMmap(this, addr, 0, size, prot,
@@ -3157,7 +3167,7 @@ NativeProcessLinux::AllocateMemory (
 }
 
 Error
-NativeProcessLinux::DeallocateMemory (lldb::addr_t addr)
+NativeProcessAndroid::DeallocateMemory (lldb::addr_t addr)
 {
     // FIXME see comments in AllocateMemory - required lower-level
     // bits not in place yet (ThreadPlans)
@@ -3165,7 +3175,7 @@ NativeProcessLinux::DeallocateMemory (lldb::addr_t addr)
 }
 
 lldb::addr_t
-NativeProcessLinux::GetSharedLibraryInfoAddress ()
+NativeProcessAndroid::GetSharedLibraryInfoAddress ()
 {
 #if 1
     // punt on this for now
@@ -3180,14 +3190,14 @@ NativeProcessLinux::GetSharedLibraryInfoAddress ()
     if (error.Fail ())
     {
          if (log)
-            log->Warning ("NativeProcessLinux::%s failed to retrieve exe module: %s", __FUNCTION__, error.AsCString ());
+            log->Warning ("NativeProcessAndroid::%s failed to retrieve exe module: %s", __FUNCTION__, error.AsCString ());
         return LLDB_INVALID_ADDRESS;
     }
 
     if (module_sp == nullptr)
     {
          if (log)
-            log->Warning ("NativeProcessLinux::%s exe module returned was NULL", __FUNCTION__);
+            log->Warning ("NativeProcessAndroid::%s exe module returned was NULL", __FUNCTION__);
          return LLDB_INVALID_ADDRESS;
     }
 
@@ -3195,7 +3205,7 @@ NativeProcessLinux::GetSharedLibraryInfoAddress ()
     if (object_file_sp == nullptr)
     {
          if (log)
-            log->Warning ("NativeProcessLinux::%s exe module returned a NULL object file", __FUNCTION__);
+            log->Warning ("NativeProcessAndroid::%s exe module returned a NULL object file", __FUNCTION__);
          return LLDB_INVALID_ADDRESS;
     }
 
@@ -3213,9 +3223,9 @@ NativeProcessLinux::GetSharedLibraryInfoAddress ()
 }
 
 size_t
-NativeProcessLinux::UpdateThreads ()
+NativeProcessAndroid::UpdateThreads ()
 {
-    // The NativeProcessLinux monitoring threads are always up to date
+    // The NativeProcessAndroid monitoring threads are always up to date
     // with respect to thread state and they keep the thread list
     // populated properly. All this method needs to do is return the
     // thread count.
@@ -3224,14 +3234,14 @@ NativeProcessLinux::UpdateThreads ()
 }
 
 bool
-NativeProcessLinux::GetArchitecture (ArchSpec &arch) const
+NativeProcessAndroid::GetArchitecture (ArchSpec &arch) const
 {
     arch = m_arch;
     return true;
 }
 
 Error
-NativeProcessLinux::GetSoftwareBreakpointSize (NativeRegisterContextSP context_sp, uint32_t &actual_opcode_size)
+NativeProcessAndroid::GetSoftwareBreakpointSize (NativeRegisterContextSP context_sp, uint32_t &actual_opcode_size)
 {
     // FIXME put this behind a breakpoint protocol class that can be
     // set per architecture.  Need ARM, MIPS support here.
@@ -3256,16 +3266,16 @@ NativeProcessLinux::GetSoftwareBreakpointSize (NativeRegisterContextSP context_s
 }
 
 Error
-NativeProcessLinux::SetBreakpoint (lldb::addr_t addr, uint32_t size, bool hardware)
+NativeProcessAndroid::SetBreakpoint (lldb::addr_t addr, uint32_t size, bool hardware)
 {
     if (hardware)
-        return Error ("NativeProcessLinux does not support hardware breakpoints");
+        return Error ("NativeProcessAndroid does not support hardware breakpoints");
     else
         return SetSoftwareBreakpoint (addr, size);
 }
 
 Error
-NativeProcessLinux::GetSoftwareBreakpointTrapOpcode (size_t trap_opcode_size_hint, size_t &actual_opcode_size, const uint8_t *&trap_opcode_bytes)
+NativeProcessAndroid::GetSoftwareBreakpointTrapOpcode (size_t trap_opcode_size_hint, size_t &actual_opcode_size, const uint8_t *&trap_opcode_bytes)
 {
     // FIXME put this behind a breakpoint protocol class that can be
     // set per architecture.  Need ARM, MIPS support here.
@@ -3293,7 +3303,7 @@ NativeProcessLinux::GetSoftwareBreakpointTrapOpcode (size_t trap_opcode_size_hin
 
 #if 0
 ProcessMessage::CrashReason
-NativeProcessLinux::GetCrashReasonForSIGSEGV(const siginfo_t *info)
+NativeProcessAndroid::GetCrashReasonForSIGSEGV(const siginfo_t *info)
 {
     ProcessMessage::CrashReason reason;
     assert(info->si_signo == SIGSEGV);
@@ -3306,7 +3316,7 @@ NativeProcessLinux::GetCrashReasonForSIGSEGV(const siginfo_t *info)
         assert(false && "unexpected si_code for SIGSEGV");
         break;
     case SI_KERNEL:
-        // Linux will occasionally send spurious SI_KERNEL codes.
+        // Android will occasionally send spurious SI_KERNEL codes.
         // (this is poorly documented in sigaction)
         // One way to get this is via unaligned SIMD loads.
         reason = ProcessMessage::eInvalidAddress; // for lack of anything better
@@ -3326,7 +3336,7 @@ NativeProcessLinux::GetCrashReasonForSIGSEGV(const siginfo_t *info)
 
 #if 0
 ProcessMessage::CrashReason
-NativeProcessLinux::GetCrashReasonForSIGILL(const siginfo_t *info)
+NativeProcessAndroid::GetCrashReasonForSIGILL(const siginfo_t *info)
 {
     ProcessMessage::CrashReason reason;
     assert(info->si_signo == SIGILL);
@@ -3370,7 +3380,7 @@ NativeProcessLinux::GetCrashReasonForSIGILL(const siginfo_t *info)
 
 #if 0
 ProcessMessage::CrashReason
-NativeProcessLinux::GetCrashReasonForSIGFPE(const siginfo_t *info)
+NativeProcessAndroid::GetCrashReasonForSIGFPE(const siginfo_t *info)
 {
     ProcessMessage::CrashReason reason;
     assert(info->si_signo == SIGFPE);
@@ -3414,7 +3424,7 @@ NativeProcessLinux::GetCrashReasonForSIGFPE(const siginfo_t *info)
 
 #if 0
 ProcessMessage::CrashReason
-NativeProcessLinux::GetCrashReasonForSIGBUS(const siginfo_t *info)
+NativeProcessAndroid::GetCrashReasonForSIGBUS(const siginfo_t *info)
 {
     ProcessMessage::CrashReason reason;
     assert(info->si_signo == SIGBUS);
@@ -3442,9 +3452,9 @@ NativeProcessLinux::GetCrashReasonForSIGBUS(const siginfo_t *info)
 #endif
 
 void
-NativeProcessLinux::ServeOperation(OperationArgs *args)
+NativeProcessAndroid::ServeOperation(OperationArgs *args)
 {
-    NativeProcessLinux *monitor = args->m_monitor;
+    NativeProcessAndroid *monitor = args->m_monitor;
 
     // We are finised with the arguments and are ready to go.  Sync with the
     // parent thread and start serving operations on the inferior.
@@ -3468,7 +3478,7 @@ NativeProcessLinux::ServeOperation(OperationArgs *args)
 }
 
 void
-NativeProcessLinux::DoOperation(void *op)
+NativeProcessAndroid::DoOperation(void *op)
 {
     Mutex::Locker lock(m_operation_mutex);
 
@@ -3487,7 +3497,7 @@ NativeProcessLinux::DoOperation(void *op)
 }
 
 Error
-NativeProcessLinux::ReadMemory (lldb::addr_t addr, void *buf, lldb::addr_t size, lldb::addr_t &bytes_read)
+NativeProcessAndroid::ReadMemory (lldb::addr_t addr, void *buf, lldb::addr_t size, lldb::addr_t &bytes_read)
 {
     ReadOperation op(addr, buf, size, bytes_read);
     DoOperation(&op);
@@ -3495,7 +3505,7 @@ NativeProcessLinux::ReadMemory (lldb::addr_t addr, void *buf, lldb::addr_t size,
 }
 
 Error
-NativeProcessLinux::WriteMemory (lldb::addr_t addr, const void *buf, lldb::addr_t size, lldb::addr_t &bytes_written)
+NativeProcessAndroid::WriteMemory (lldb::addr_t addr, const void *buf, lldb::addr_t size, lldb::addr_t &bytes_written)
 {
     WriteOperation op(addr, buf, size, bytes_written);
     DoOperation(&op);
@@ -3503,7 +3513,7 @@ NativeProcessLinux::WriteMemory (lldb::addr_t addr, const void *buf, lldb::addr_
 }
 
 bool
-NativeProcessLinux::ReadRegisterValue(lldb::tid_t tid, uint32_t offset, const char* reg_name,
+NativeProcessAndroid::ReadRegisterValue(lldb::tid_t tid, uint32_t offset, const char* reg_name,
                                   uint32_t size, RegisterValue &value)
 {
     bool result;
@@ -3513,7 +3523,7 @@ NativeProcessLinux::ReadRegisterValue(lldb::tid_t tid, uint32_t offset, const ch
 }
 
 bool
-NativeProcessLinux::WriteRegisterValue(lldb::tid_t tid, unsigned offset,
+NativeProcessAndroid::WriteRegisterValue(lldb::tid_t tid, unsigned offset,
                                    const char* reg_name, const RegisterValue &value)
 {
     bool result;
@@ -3523,7 +3533,7 @@ NativeProcessLinux::WriteRegisterValue(lldb::tid_t tid, unsigned offset,
 }
 
 bool
-NativeProcessLinux::ReadGPR(lldb::tid_t tid, void *buf, size_t buf_size)
+NativeProcessAndroid::ReadGPR(lldb::tid_t tid, void *buf, size_t buf_size)
 {
     bool result;
     ReadGPROperation op(tid, buf, buf_size, result);
@@ -3532,7 +3542,7 @@ NativeProcessLinux::ReadGPR(lldb::tid_t tid, void *buf, size_t buf_size)
 }
 
 bool
-NativeProcessLinux::ReadFPR(lldb::tid_t tid, void *buf, size_t buf_size)
+NativeProcessAndroid::ReadFPR(lldb::tid_t tid, void *buf, size_t buf_size)
 {
     bool result;
     ReadFPROperation op(tid, buf, buf_size, result);
@@ -3541,7 +3551,7 @@ NativeProcessLinux::ReadFPR(lldb::tid_t tid, void *buf, size_t buf_size)
 }
 
 bool
-NativeProcessLinux::ReadRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset)
+NativeProcessAndroid::ReadRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset)
 {
     bool result;
     ReadRegisterSetOperation op(tid, buf, buf_size, regset, result);
@@ -3550,7 +3560,7 @@ NativeProcessLinux::ReadRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size,
 }
 
 bool
-NativeProcessLinux::WriteGPR(lldb::tid_t tid, void *buf, size_t buf_size)
+NativeProcessAndroid::WriteGPR(lldb::tid_t tid, void *buf, size_t buf_size)
 {
     bool result;
     WriteGPROperation op(tid, buf, buf_size, result);
@@ -3559,7 +3569,7 @@ NativeProcessLinux::WriteGPR(lldb::tid_t tid, void *buf, size_t buf_size)
 }
 
 bool
-NativeProcessLinux::WriteFPR(lldb::tid_t tid, void *buf, size_t buf_size)
+NativeProcessAndroid::WriteFPR(lldb::tid_t tid, void *buf, size_t buf_size)
 {
     bool result;
     WriteFPROperation op(tid, buf, buf_size, result);
@@ -3568,7 +3578,7 @@ NativeProcessLinux::WriteFPR(lldb::tid_t tid, void *buf, size_t buf_size)
 }
 
 bool
-NativeProcessLinux::WriteRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset)
+NativeProcessAndroid::WriteRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset)
 {
     bool result;
     WriteRegisterSetOperation op(tid, buf, buf_size, regset, result);
@@ -3577,23 +3587,23 @@ NativeProcessLinux::WriteRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size
 }
 
 bool
-NativeProcessLinux::Resume (lldb::tid_t tid, uint32_t signo)
+NativeProcessAndroid::Resume (lldb::tid_t tid, uint32_t signo)
 {
     bool result;
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
     if (log)
-        log->Printf ("NativeProcessLinux::%s() resuming thread = %"  PRIu64 " with signal %s", __FUNCTION__, tid,
+        log->Printf ("NativeProcessAndroid::%s() resuming thread = %"  PRIu64 " with signal %s", __FUNCTION__, tid,
                                  GetUnixSignals().GetSignalAsCString (signo));
     ResumeOperation op (tid, signo, result);
     DoOperation (&op);
     if (log)
-        log->Printf ("NativeProcessLinux::%s() resuming result = %s", __FUNCTION__, result ? "true" : "false");
+        log->Printf ("NativeProcessAndroid::%s() resuming result = %s", __FUNCTION__, result ? "true" : "false");
     return result;
 }
 
 bool
-NativeProcessLinux::SingleStep(lldb::tid_t tid, uint32_t signo)
+NativeProcessAndroid::SingleStep(lldb::tid_t tid, uint32_t signo)
 {
     bool result;
     SingleStepOperation op(tid, signo, result);
@@ -3602,7 +3612,7 @@ NativeProcessLinux::SingleStep(lldb::tid_t tid, uint32_t signo)
 }
 
 bool
-NativeProcessLinux::GetSignalInfo(lldb::tid_t tid, void *siginfo, int &ptrace_err)
+NativeProcessAndroid::GetSignalInfo(lldb::tid_t tid, void *siginfo, int &ptrace_err)
 {
     bool result;
     SiginfoOperation op(tid, siginfo, result, ptrace_err);
@@ -3611,7 +3621,7 @@ NativeProcessLinux::GetSignalInfo(lldb::tid_t tid, void *siginfo, int &ptrace_er
 }
 
 bool
-NativeProcessLinux::GetEventMessage(lldb::tid_t tid, unsigned long *message)
+NativeProcessAndroid::GetEventMessage(lldb::tid_t tid, unsigned long *message)
 {
     bool result;
     EventMessageOperation op(tid, message, result);
@@ -3620,7 +3630,7 @@ NativeProcessLinux::GetEventMessage(lldb::tid_t tid, unsigned long *message)
 }
 
 lldb_private::Error
-NativeProcessLinux::Detach(lldb::tid_t tid)
+NativeProcessAndroid::Detach(lldb::tid_t tid)
 {
     lldb_private::Error error;
     if (tid != LLDB_INVALID_THREAD_ID)
@@ -3632,7 +3642,7 @@ NativeProcessLinux::Detach(lldb::tid_t tid)
 }
 
 bool
-NativeProcessLinux::DupDescriptor(const char *path, int fd, int flags)
+NativeProcessAndroid::DupDescriptor(const char *path, int fd, int flags)
 {
     int target_fd = open(path, flags, 0666);
 
@@ -3643,7 +3653,7 @@ NativeProcessLinux::DupDescriptor(const char *path, int fd, int flags)
 }
 
 void
-NativeProcessLinux::StopMonitoringChildProcess()
+NativeProcessAndroid::StopMonitoringChildProcess()
 {
     if (m_monitor_thread.IsJoinable())
     {
@@ -3653,7 +3663,7 @@ NativeProcessLinux::StopMonitoringChildProcess()
 }
 
 void
-NativeProcessLinux::StopMonitor()
+NativeProcessAndroid::StopMonitor()
 {
     StopMonitoringChildProcess();
     StopOpThread();
@@ -3668,7 +3678,7 @@ NativeProcessLinux::StopMonitor()
 }
 
 void
-NativeProcessLinux::StopOpThread()
+NativeProcessAndroid::StopOpThread()
 {
     if (!m_operation_thread.IsJoinable())
         return;
@@ -3678,7 +3688,7 @@ NativeProcessLinux::StopOpThread()
 }
 
 bool
-NativeProcessLinux::HasThreadNoLock (lldb::tid_t thread_id)
+NativeProcessAndroid::HasThreadNoLock (lldb::tid_t thread_id)
 {
     for (auto thread_sp : m_threads)
     {
@@ -3695,7 +3705,7 @@ NativeProcessLinux::HasThreadNoLock (lldb::tid_t thread_id)
 }
 
 NativeThreadProtocolSP
-NativeProcessLinux::MaybeGetThreadNoLock (lldb::tid_t thread_id)
+NativeProcessAndroid::MaybeGetThreadNoLock (lldb::tid_t thread_id)
 {
     // CONSIDER organize threads by map - we can do better than linear.
     for (auto thread_sp : m_threads)
@@ -3709,7 +3719,7 @@ NativeProcessLinux::MaybeGetThreadNoLock (lldb::tid_t thread_id)
 }
 
 bool
-NativeProcessLinux::StopTrackingThread (lldb::tid_t thread_id)
+NativeProcessAndroid::StopTrackingThread (lldb::tid_t thread_id)
 {
     Mutex::Locker locker (m_threads_mutex);
     for (auto it = m_threads.begin (); it != m_threads.end (); ++it)
@@ -3726,7 +3736,7 @@ NativeProcessLinux::StopTrackingThread (lldb::tid_t thread_id)
 }
 
 NativeThreadProtocolSP
-NativeProcessLinux::AddThread (lldb::tid_t thread_id)
+NativeProcessAndroid::AddThread (lldb::tid_t thread_id)
 {
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
 
@@ -3734,7 +3744,7 @@ NativeProcessLinux::AddThread (lldb::tid_t thread_id)
 
     if (log)
     {
-        log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " adding thread with tid %" PRIu64,
+        log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " adding thread with tid %" PRIu64,
                 __FUNCTION__,
                 GetID (),
                 thread_id);
@@ -3746,21 +3756,21 @@ NativeProcessLinux::AddThread (lldb::tid_t thread_id)
     if (m_threads.empty ())
         SetCurrentThreadID (thread_id);
 
-    NativeThreadProtocolSP thread_sp (new NativeThreadLinux (this, thread_id));
+    NativeThreadProtocolSP thread_sp (new NativeThreadAndroid (this, thread_id));
     m_threads.push_back (thread_sp);
 
     return thread_sp;
 }
 
 NativeThreadProtocolSP
-NativeProcessLinux::GetOrCreateThread (lldb::tid_t thread_id, bool &created)
+NativeProcessAndroid::GetOrCreateThread (lldb::tid_t thread_id, bool &created)
 {
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
 
     Mutex::Locker locker (m_threads_mutex);
     if (log)
     {
-        log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " get/create thread with tid %" PRIu64,
+        log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " get/create thread with tid %" PRIu64,
                      __FUNCTION__,
                      GetID (),
                      thread_id);
@@ -3771,7 +3781,7 @@ NativeProcessLinux::GetOrCreateThread (lldb::tid_t thread_id, bool &created)
     if (thread_sp)
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 ": thread already tracked, returning",
+            log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " tid %" PRIu64 ": thread already tracked, returning",
                          __FUNCTION__,
                          GetID (),
                          thread_id);
@@ -3782,12 +3792,12 @@ NativeProcessLinux::GetOrCreateThread (lldb::tid_t thread_id, bool &created)
 
     // Create the thread metadata since it isn't being tracked.
     if (log)
-        log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 ": thread didn't exist, tracking now",
+        log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " tid %" PRIu64 ": thread didn't exist, tracking now",
                      __FUNCTION__,
                      GetID (),
                      thread_id);
 
-    thread_sp.reset (new NativeThreadLinux (this, thread_id));
+    thread_sp.reset (new NativeThreadAndroid (this, thread_id));
     m_threads.push_back (thread_sp);
     created = true;
     
@@ -3795,29 +3805,29 @@ NativeProcessLinux::GetOrCreateThread (lldb::tid_t thread_id, bool &created)
 }
 
 Error
-NativeProcessLinux::FixupBreakpointPCAsNeeded (NativeThreadProtocolSP &thread_sp)
+NativeProcessAndroid::FixupBreakpointPCAsNeeded (NativeThreadProtocolSP &thread_sp)
 {
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
 
     Error error;
 
-    // Get a linux thread pointer.
+    // Get a Android thread pointer.
     if (!thread_sp)
     {
         error.SetErrorString ("null thread_sp");
         if (log)
-            log->Printf ("NativeProcessLinux::%s failed: %s", __FUNCTION__, error.AsCString ());
+            log->Printf ("NativeProcessAndroid::%s failed: %s", __FUNCTION__, error.AsCString ());
         return error;
     }
-    NativeThreadLinux *const linux_thread_p = reinterpret_cast<NativeThreadLinux*> (thread_sp.get());
+    NativeThreadAndroid *const Android_thread_p = reinterpret_cast<NativeThreadAndroid*> (thread_sp.get());
 
     // Find out the size of a breakpoint (might depend on where we are in the code).
-    NativeRegisterContextSP context_sp = linux_thread_p->GetRegisterContext ();
+    NativeRegisterContextSP context_sp = Android_thread_p->GetRegisterContext ();
     if (!context_sp)
     {
         error.SetErrorString ("cannot get a NativeRegisterContext for the thread");
         if (log)
-            log->Printf ("NativeProcessLinux::%s failed: %s", __FUNCTION__, error.AsCString ());
+            log->Printf ("NativeProcessAndroid::%s failed: %s", __FUNCTION__, error.AsCString ());
         return error;
     }
 
@@ -3826,13 +3836,13 @@ NativeProcessLinux::FixupBreakpointPCAsNeeded (NativeThreadProtocolSP &thread_sp
     if (error.Fail ())
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s GetBreakpointSize() failed: %s", __FUNCTION__, error.AsCString ());
+            log->Printf ("NativeProcessAndroid::%s GetBreakpointSize() failed: %s", __FUNCTION__, error.AsCString ());
         return error;
     }
     else
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s breakpoint size: %" PRIu32, __FUNCTION__, breakpoint_size);
+            log->Printf ("NativeProcessAndroid::%s breakpoint size: %" PRIu32, __FUNCTION__, breakpoint_size);
     }
 
     // First try probing for a breakpoint at a software breakpoint location: PC - breakpoint size.
@@ -3852,7 +3862,7 @@ NativeProcessLinux::FixupBreakpointPCAsNeeded (NativeThreadProtocolSP &thread_sp
     {
         // We didn't find one at a software probe location.  Nothing to do.
         if (log)
-            log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " no lldb breakpoint found at current pc with adjustment: 0x%" PRIx64, __FUNCTION__, GetID (), breakpoint_addr);
+            log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " no lldb breakpoint found at current pc with adjustment: 0x%" PRIx64, __FUNCTION__, GetID (), breakpoint_addr);
         return Error ();
     }
 
@@ -3860,7 +3870,7 @@ NativeProcessLinux::FixupBreakpointPCAsNeeded (NativeThreadProtocolSP &thread_sp
     if (!breakpoint_sp->IsSoftwareBreakpoint ())
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " breakpoint found at 0x%" PRIx64 ", not software, nothing to adjust", __FUNCTION__, GetID (), breakpoint_addr);
+            log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " breakpoint found at 0x%" PRIx64 ", not software, nothing to adjust", __FUNCTION__, GetID (), breakpoint_addr);
         return Error ();
     }
 
@@ -3873,21 +3883,22 @@ NativeProcessLinux::FixupBreakpointPCAsNeeded (NativeThreadProtocolSP &thread_sp
     {
         // Nothing to do!  How did we get here?
         if (log)
-            log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " breakpoint found at 0x%" PRIx64 ", it is software, but the size is zero, nothing to do (unexpected)", __FUNCTION__, GetID (), breakpoint_addr);
+            log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " breakpoint found at 0x%" PRIx64 ", it is software, but the size is zero, nothing to do (unexpected)", __FUNCTION__, GetID (), breakpoint_addr);
         return Error ();
     }
 
     // Change the program counter.
     if (log)
-        log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 ": changing PC from 0x%" PRIx64 " to 0x%" PRIx64, __FUNCTION__, GetID (), linux_thread_p->GetID (), initial_pc_addr, breakpoint_addr);
+        log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " tid %" PRIu64 ": changing PC from 0x%" PRIx64 " to 0x%" PRIx64, __FUNCTION__, GetID (), Android_thread_p->GetID (), initial_pc_addr, breakpoint_addr);
 
     error = context_sp->SetPC (breakpoint_addr);
     if (error.Fail ())
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 ": failed to set PC: %s", __FUNCTION__, GetID (), linux_thread_p->GetID (), error.AsCString ());
+            log->Printf ("NativeProcessAndroid::%s pid %" PRIu64 " tid %" PRIu64 ": failed to set PC: %s", __FUNCTION__, GetID (), Android_thread_p->GetID (), error.AsCString ());
         return error;
     }
 
     return error;
 }
+

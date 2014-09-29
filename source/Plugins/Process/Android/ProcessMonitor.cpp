@@ -15,10 +15,17 @@
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
+
+#if defined(__arm__)
+#include <linux/personality.h>
+#include <linux/user.h>
+#else
 #include <sys/personality.h>
 #include <sys/user.h>
+#endif
+
 #include <elf.h>
-#include <sys/procfs.h>
+//#include <sys/procfs.h>
 #include <sys/ptrace.h>
 #include <sys/uio.h>
 #include <sys/socket.h>
@@ -40,7 +47,7 @@
 #include "lldb/Utility/PseudoTerminal.h"
 
 #include "POSIXThread.h"
-#include "ProcessLinux.h"
+#include "ProcessAndroid.h"
 #include "ProcessPOSIXLog.h"
 #include "ProcessMonitor.h"
 
@@ -83,7 +90,7 @@ using namespace lldb_private;
 
 // FIXME: this code is host-dependent with respect to types and
 // endianness and needs to be fixed.  For example, lldb::addr_t is
-// hard-coded to uint64_t, but on a 32-bit Linux host, ptrace requires
+// hard-coded to uint64_t, but on a 32-bit Android host, ptrace requires
 // 32-bit pointer arguments.  This code uses casts to work around the
 // problem.
 
@@ -178,10 +185,14 @@ PtraceWrapper(int req, lldb::pid_t pid, void *addr, void *data, size_t data_size
     PtraceDisplayBytes(req, data, data_size);
 
     errno = 0;
+#ifdef ANDROID
+    result = ptrace(static_cast<__ptrace_request>(req), static_cast<pid_t>(pid), addr, data);
+#else
     if (req == PTRACE_GETREGSET || req == PTRACE_SETREGSET)
         result = ptrace(static_cast<__ptrace_request>(req), static_cast<pid_t>(pid), *(unsigned int *)addr, data);
     else
         result = ptrace(static_cast<__ptrace_request>(req), static_cast<pid_t>(pid), addr, data);
+#endif
 
     if (log)
         log->Printf("ptrace(%s, %" PRIu64 ", %p, %p, %zu)=%lX called from file %s line %d",
@@ -213,10 +224,14 @@ PtraceWrapper(int req, pid_t pid, void *addr, void *data, size_t data_size)
 {
     long result = 0;
     errno = 0;
+#ifdef ANDROID
+    result = ptrace(static_cast<__ptrace_request>(req), pid, addr, data);
+#else
     if (req == PTRACE_GETREGSET || req == PTRACE_SETREGSET)
         result = ptrace(static_cast<__ptrace_request>(req), pid, *(unsigned int *)addr, data);
     else
         result = ptrace(static_cast<__ptrace_request>(req), pid, addr, data);
+#endif
     return result;
 }
 
@@ -398,7 +413,7 @@ EnsureFDFlags(int fd, int flags, Error &error)
 /// @class Operation
 /// @brief Represents a ProcessMonitor operation.
 ///
-/// Under Linux, it is not possible to ptrace() from any other thread but the
+/// Under Android, it is not possible to ptrace() from any other thread but the
 /// one that spawned or attached to the process from the start.  Therefore, when
 /// a ProcessMonitor is asked to deliver or change the state of an inferior
 /// process the operation must be "funneled" to a specific thread to perform the
@@ -888,7 +903,7 @@ ReadThreadPointerOperation::Execute(ProcessMonitor *monitor)
     if (log)
         log->Printf ("ProcessMonitor::%s()", __FUNCTION__);
 
-    // The process for getting the thread area on Linux is
+    // The process for getting the thread area on Android is
     // somewhat... obscure. There's several different ways depending on
     // what arch you're on, and what kernel version you have.
 
@@ -1140,7 +1155,7 @@ ProcessMonitor::AttachArgs::~AttachArgs()
 ///
 /// One thread (@see SignalThread) simply blocks on a call to waitpid() looking
 /// for changes in the debugee state.  When a change is detected a
-/// ProcessMessage is sent to the associated ProcessLinux instance.  This thread
+/// ProcessMessage is sent to the associated ProcessAndroid instance.  This thread
 /// "drives" state changes in the debugger.
 ///
 /// The second thread (@see OperationThread) is responsible for two things 1)
@@ -1157,7 +1172,7 @@ ProcessMonitor::ProcessMonitor(ProcessPOSIX *process,
                                const char *working_dir,
                                const lldb_private::ProcessLaunchInfo &launch_info,
                                lldb_private::Error &error)
-    : m_process(static_cast<ProcessLinux *>(process)),
+    : m_process(static_cast<ProcessAndroid *>(process)),
       m_operation_thread(LLDB_INVALID_HOST_THREAD),
       m_monitor_thread(LLDB_INVALID_HOST_THREAD),
       m_pid(LLDB_INVALID_PROCESS_ID),
@@ -1210,7 +1225,7 @@ WAIT_AGAIN:
 ProcessMonitor::ProcessMonitor(ProcessPOSIX *process,
                                lldb::pid_t pid,
                                lldb_private::Error &error)
-  : m_process(static_cast<ProcessLinux *>(process)),
+  : m_process(static_cast<ProcessAndroid *>(process)),
       m_operation_thread(LLDB_INVALID_HOST_THREAD),
       m_monitor_thread(LLDB_INVALID_HOST_THREAD),
       m_pid(LLDB_INVALID_PROCESS_ID),
@@ -1268,7 +1283,7 @@ ProcessMonitor::~ProcessMonitor()
 void
 ProcessMonitor::StartLaunchOpThread(LaunchArgs *args, Error &error)
 {
-    static const char *g_thread_name = "lldb.process.linux.operation";
+    static const char *g_thread_name = "lldb.process.Android.operation";
 
     if (m_operation_thread.IsJoinable())
         return;
@@ -1298,7 +1313,7 @@ ProcessMonitor::Launch(LaunchArgs *args)
         return false;
 
     ProcessMonitor *monitor = args->m_monitor;
-    ProcessLinux &process = monitor->GetProcess();
+    ProcessAndroid &process = monitor->GetProcess();
     const char **argv = args->m_argv;
     const char **envp = args->m_envp;
     const char *stdin_path = args->m_stdin_path;
@@ -1378,7 +1393,7 @@ ProcessMonitor::Launch(LaunchArgs *args)
             if (old_personality == -1)
             {
                 if (log)
-                    log->Printf ("ProcessMonitor::%s retrieval of Linux personality () failed: %s. Cannot disable ASLR.", __FUNCTION__, strerror (errno));
+                    log->Printf ("ProcessMonitor::%s retrieval of Android personality () failed: %s. Cannot disable ASLR.", __FUNCTION__, strerror (errno));
             }
             else
             {
@@ -1386,7 +1401,7 @@ ProcessMonitor::Launch(LaunchArgs *args)
                 if (new_personality == -1)
                 {
                     if (log)
-                        log->Printf ("ProcessMonitor::%s setting of Linux personality () to disable ASLR failed, ignoring: %s", __FUNCTION__, strerror (errno));
+                        log->Printf ("ProcessMonitor::%s setting of Android personality () to disable ASLR failed, ignoring: %s", __FUNCTION__, strerror (errno));
 
                 }
                 else
@@ -1465,7 +1480,7 @@ ProcessMonitor::Launch(LaunchArgs *args)
     monitor->m_pid = pid;
 
     // Set the terminal fd to be in non blocking mode (it simplifies the
-    // implementation of ProcessLinux::GetSTDOUT to have a non-blocking
+    // implementation of ProcessAndroid::GetSTDOUT to have a non-blocking
     // descriptor to read from).
     if (!EnsureFDFlags(monitor->m_terminal_fd, O_NONBLOCK, args->m_error))
         goto FINISH;
@@ -1491,7 +1506,7 @@ FINISH:
 void
 ProcessMonitor::StartAttachOpThread(AttachArgs *args, lldb_private::Error &error)
 {
-    static const char *g_thread_name = "lldb.process.linux.operation";
+    static const char *g_thread_name = "lldb.process.Android.operation";
 
     if (m_operation_thread.IsJoinable())
         return;
@@ -1519,7 +1534,7 @@ ProcessMonitor::Attach(AttachArgs *args)
     lldb::pid_t pid = args->m_pid;
 
     ProcessMonitor *monitor = args->m_monitor;
-    ProcessLinux &process = monitor->GetProcess();
+    ProcessAndroid &process = monitor->GetProcess();
     lldb::ThreadSP inferior;
     Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
 
@@ -1642,7 +1657,7 @@ ProcessMonitor::MonitorCallback(void *callback_baton,
 {
     ProcessMessage message;
     ProcessMonitor *monitor = static_cast<ProcessMonitor*>(callback_baton);
-    ProcessLinux *process = monitor->m_process;
+    ProcessAndroid *process = monitor->m_process;
     assert(process);
     bool stop_monitoring;
     siginfo_t info;
@@ -1800,7 +1815,7 @@ ProcessMonitor::MonitorSignal(ProcessMonitor *monitor,
 
     // POSIX says that process behaviour is undefined after it ignores a SIGFPE,
     // SIGILL, SIGSEGV, or SIGBUS *unless* that signal was generated by a
-    // kill(2) or raise(3).  Similarly for tgkill(2) on Linux.
+    // kill(2) or raise(3).  Similarly for tgkill(2) on Android.
     //
     // IOW, user generated signals never generate what we consider to be a
     // "crash".
@@ -1853,7 +1868,7 @@ ProcessMonitor::MonitorSignal(ProcessMonitor *monitor,
     return ProcessMessage::Signal(pid, signo);
 }
 
-// On Linux, when a new thread is created, we receive to notifications,
+// On Android, when a new thread is created, we receive to notifications,
 // (1) a SIGTRAP|PTRACE_EVENT_CLONE from the main process thread with the
 // child thread id as additional information, and (2) a SIGSTOP|SI_USER from
 // the new child thread indicating that it has is stopped because we attached.
@@ -2116,7 +2131,7 @@ ProcessMonitor::GetCrashReasonForSIGSEGV(const siginfo_t *info)
         assert(false && "unexpected si_code for SIGSEGV");
         break;
     case SI_KERNEL:
-        // Linux will occasionally send spurious SI_KERNEL codes.
+        // Android will occasionally send spurious SI_KERNEL codes.
         // (this is poorly documented in sigaction)
         // One way to get this is via unaligned SIMD loads.
         reason = ProcessMessage::eInvalidAddress; // for lack of anything better

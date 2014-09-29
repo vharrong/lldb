@@ -1129,8 +1129,17 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
 
 #endif // defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
 
-#ifndef _WIN32
+#ifdef ANDROID
+Error
+Host::LaunchProcess (ProcessLaunchInfo &launch_info)
+{
+	assert(!"not implemented");
+	Error error;
+	return error;
+}
+#endif // ANDROID
 
+#ifndef _WIN32
 void
 Host::Kill(lldb::pid_t pid, int signo)
 {

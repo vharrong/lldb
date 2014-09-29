@@ -43,6 +43,7 @@
 #include "Plugins/ObjectFile/PECOFF/ObjectFilePECOFF.h"
 #include "Plugins/Platform/FreeBSD/PlatformFreeBSD.h"
 #include "Plugins/Platform/Linux/PlatformLinux.h"
+#include "Plugins/Platform/Android/PlatformAndroid.h"
 #include "Plugins/Platform/POSIX/PlatformPOSIX.h"
 #include "Plugins/Platform/Windows/PlatformWindows.h"
 #include "Plugins/Platform/Kalimba/PlatformKalimba.h"
@@ -77,7 +78,11 @@
 
 
 #if defined (__linux__)
+#if defined (ANDROID)
+#include "Plugins/Process/Android/ProcessAndroid.h"
+#else
 #include "Plugins/Process/Linux/ProcessLinux.h"
+#endif
 #endif
 
 #if defined (_WIN32)
@@ -145,6 +150,7 @@ lldb_private::Initialize ()
         DynamicLoaderPOSIXDYLD::Initialize ();
         PlatformFreeBSD::Initialize();
         PlatformLinux::Initialize();
+        PlatformAndroid::Initialize();
         PlatformWindows::Initialize();
         PlatformKalimba::Initialize();
         SymbolFileDWARFDebugMap::Initialize();
@@ -177,10 +183,14 @@ lldb_private::Initialize ()
         SystemRuntimeMacOSX::Initialize();
 #endif
 #if defined (__linux__)
+#if defined (ANDROID)
+        ProcessAndroid::Initialize();
+#else
         //----------------------------------------------------------------------
         // Linux hosted plugins
         //----------------------------------------------------------------------
         ProcessLinux::Initialize();
+#endif
 #endif
 #if defined(_WIN32)
         ProcessWindows::Initialize();
@@ -237,6 +247,7 @@ lldb_private::Terminate ()
     DynamicLoaderPOSIXDYLD::Terminate ();
     PlatformFreeBSD::Terminate();
     PlatformLinux::Terminate();
+    PlatformAndroid::Terminate();
     PlatformWindows::Terminate();
     PlatformKalimba::Terminate();
     SymbolFileDWARFDebugMap::Terminate();
@@ -268,7 +279,11 @@ lldb_private::Terminate ()
     Debugger::SettingsTerminate ();
 
 #if defined (__linux__)
+#if defined (ANDROID)
+    ProcessAndroid::Terminate();
+#else
     ProcessLinux::Terminate();
+#endif
 #endif
 
 #if defined (__FreeBSD__)

@@ -1,4 +1,4 @@
-//===-- PlatformLinux.cpp ---------------------------------------*- C++ -*-===//
+//===-- PlatformAndroid.cpp ---------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -9,7 +9,7 @@
 
 #include "lldb/lldb-python.h"
 
-#include "PlatformLinux.h"
+#include "PlatformAndroid.h"
 #include "lldb/Host/Config.h"
 
 // C Includes
@@ -35,7 +35,7 @@
 #include "lldb/Target/Process.h"
 
 #if defined(__linux__)
-#include "../../Process/Linux/NativeProcessLinux.h"
+#include "../../Process/Android/NativeProcessAndroid.h"
 #endif
 
 using namespace lldb;
@@ -44,7 +44,7 @@ using namespace lldb_private;
 static uint32_t g_initialize_count = 0;
 
 //------------------------------------------------------------------
-/// Code to handle the PlatformLinux settings
+/// Code to handle the PlatformAndroid settings
 //------------------------------------------------------------------
 
 static PropertyDefinition
@@ -60,18 +60,18 @@ enum {
 
 
 
-class PlatformLinuxProperties : public Properties
+class PlatformAndroidProperties : public Properties
 {
 public:
 
     static ConstString &
     GetSettingName ()
     {
-        static ConstString g_setting_name("linux");
+        static ConstString g_setting_name("Android");
         return g_setting_name;
     }
 
-    PlatformLinuxProperties() :
+    PlatformAndroidProperties() :
     Properties ()
     {
         m_collection_sp.reset (new OptionValueProperties(GetSettingName()));
@@ -79,7 +79,7 @@ public:
     }
 
     virtual
-    ~PlatformLinuxProperties()
+    ~PlatformAndroidProperties()
     {
     }
 
@@ -91,26 +91,26 @@ public:
     }
 };
 
-typedef std::shared_ptr<PlatformLinuxProperties> PlatformLinuxPropertiesSP;
+typedef std::shared_ptr<PlatformAndroidProperties> PlatformAndroidPropertiesSP;
 
-static const PlatformLinuxPropertiesSP &
+static const PlatformAndroidPropertiesSP &
 GetGlobalProperties()
 {
-    static PlatformLinuxPropertiesSP g_settings_sp;
+    static PlatformAndroidPropertiesSP g_settings_sp;
     if (!g_settings_sp)
-        g_settings_sp.reset (new PlatformLinuxProperties ());
+        g_settings_sp.reset (new PlatformAndroidProperties ());
     return g_settings_sp;
 }
 
 void
-PlatformLinux::DebuggerInitialize (lldb_private::Debugger &debugger)
+PlatformAndroid::DebuggerInitialize (lldb_private::Debugger &debugger)
 {
-    if (!PluginManager::GetSettingForPlatformPlugin (debugger, PlatformLinuxProperties::GetSettingName()))
+    if (!PluginManager::GetSettingForPlatformPlugin (debugger, PlatformAndroidProperties::GetSettingName()))
     {
         const bool is_global_setting = true;
         PluginManager::CreateSettingForPlatformPlugin (debugger,
                                                        GetGlobalProperties()->GetValueProperties(),
-                                                       ConstString ("Properties for the PlatformLinux plug-in."),
+                                                       ConstString ("Properties for the PlatformAndroid plug-in."),
                                                        is_global_setting);
     }
 }
@@ -119,7 +119,7 @@ PlatformLinux::DebuggerInitialize (lldb_private::Debugger &debugger)
 //------------------------------------------------------------------
 
 PlatformSP
-PlatformLinux::CreateInstance (bool force, const ArchSpec *arch)
+PlatformAndroid::CreateInstance (bool force, const ArchSpec *arch)
 {
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PLATFORM));
     if (log)
@@ -132,7 +132,7 @@ PlatformLinux::CreateInstance (bool force, const ArchSpec *arch)
 
         const char *triple_cstr = arch ? arch->GetTriple ().getTriple ().c_str() : "<null>";
 
-        log->Printf ("PlatformLinux::%s(force=%s, arch={%s,%s})", __FUNCTION__, force ? "true" : "false", arch_name, triple_cstr);
+        log->Printf ("PlatformAndroid::%s(force=%s, arch={%s,%s})", __FUNCTION__, force ? "true" : "false", arch_name, triple_cstr);
     }
 
     bool create = force;
@@ -146,7 +146,7 @@ PlatformLinux::CreateInstance (bool force, const ArchSpec *arch)
                 break;
                 
 #if defined(__linux__)
-            // Only accept "unknown" for the vendor if the host is linux and
+            // Only accept "unknown" for the vendor if the host is Android and
             // it "unknown" wasn't specified (it was just returned because it
             // was NOT specified_
             case llvm::Triple::VendorType::UnknownVendor:
@@ -161,11 +161,11 @@ PlatformLinux::CreateInstance (bool force, const ArchSpec *arch)
         {
             switch (triple.getOS())
             {
-                case llvm::Triple::Linux:
+                case llvm::Triple::Android:
                     break;
                     
 #if defined(__linux__)
-                // Only accept "unknown" for the OS if the host is linux and
+                // Only accept "unknown" for the OS if the host is Android and
                 // it "unknown" wasn't specified (it was just returned because it
                 // was NOT specified)
                 case llvm::Triple::OSType::UnknownOS:
@@ -182,19 +182,19 @@ PlatformLinux::CreateInstance (bool force, const ArchSpec *arch)
     if (create)
     {
         if (log)
-            log->Printf ("PlatformLinux::%s() creating remote-linux platform", __FUNCTION__);
-        return PlatformSP(new PlatformLinux(false));
+            log->Printf ("PlatformAndroid::%s() creating remote-Android platform", __FUNCTION__);
+        return PlatformSP(new PlatformAndroid(false));
     }
 
     if (log)
-        log->Printf ("PlatformLinux::%s() aborting creation of remote-linux platform", __FUNCTION__);
+        log->Printf ("PlatformAndroid::%s() aborting creation of remote-Android platform", __FUNCTION__);
 
     return PlatformSP();
 }
 
 
 lldb_private::ConstString
-PlatformLinux::GetPluginNameStatic (bool is_host)
+PlatformAndroid::GetPluginNameStatic (bool is_host)
 {
     if (is_host)
     {
@@ -203,57 +203,57 @@ PlatformLinux::GetPluginNameStatic (bool is_host)
     }
     else
     {
-        static ConstString g_remote_name("remote-linux");
+        static ConstString g_remote_name("remote-Android");
         return g_remote_name;
     }
 }
 
 const char *
-PlatformLinux::GetPluginDescriptionStatic (bool is_host)
+PlatformAndroid::GetPluginDescriptionStatic (bool is_host)
 {
     if (is_host)
-        return "Local Linux user platform plug-in.";
+        return "Local Android user platform plug-in.";
     else
-        return "Remote Linux user platform plug-in.";
+        return "Remote Android user platform plug-in.";
 }
 
 lldb_private::ConstString
-PlatformLinux::GetPluginName()
+PlatformAndroid::GetPluginName()
 {
     return GetPluginNameStatic(IsHost());
 }
 
 void
-PlatformLinux::Initialize ()
+PlatformAndroid::Initialize ()
 {
     if (g_initialize_count++ == 0)
     {
 #if defined(__linux__)
-        PlatformSP default_platform_sp (new PlatformLinux(true));
+        PlatformSP default_platform_sp (new PlatformAndroid(true));
         default_platform_sp->SetSystemArchitecture(HostInfo::GetArchitecture());
         Platform::SetHostPlatform (default_platform_sp);
 #endif
-        PluginManager::RegisterPlugin(PlatformLinux::GetPluginNameStatic(false),
-                                      PlatformLinux::GetPluginDescriptionStatic(false),
-                                      PlatformLinux::CreateInstance,
-                                      PlatformLinux::DebuggerInitialize);
+        PluginManager::RegisterPlugin(PlatformAndroid::GetPluginNameStatic(false),
+                                      PlatformAndroid::GetPluginDescriptionStatic(false),
+                                      PlatformAndroid::CreateInstance,
+                                      PlatformAndroid::DebuggerInitialize);
     }
 }
 
 void
-PlatformLinux::Terminate ()
+PlatformAndroid::Terminate ()
 {
     if (g_initialize_count > 0)
     {
         if (--g_initialize_count == 0)
         {
-            PluginManager::UnregisterPlugin (PlatformLinux::CreateInstance);
+            PluginManager::UnregisterPlugin (PlatformAndroid::CreateInstance);
         }
     }
 }
 
 Error
-PlatformLinux::ResolveExecutable (const FileSpec &exe_file,
+PlatformAndroid::ResolveExecutable (const FileSpec &exe_file,
                                   const ArchSpec &exe_arch,
                                   lldb::ModuleSP &exe_module_sp,
                                   const FileSpecList *module_search_paths_ptr)
@@ -396,7 +396,7 @@ PlatformLinux::ResolveExecutable (const FileSpec &exe_file,
 }
 
 Error
-PlatformLinux::GetFileWithUUID (const FileSpec &platform_file, 
+PlatformAndroid::GetFileWithUUID (const FileSpec &platform_file,
                                 const UUID *uuid_ptr, FileSpec &local_file)
 {
     if (IsRemote())
@@ -414,7 +414,7 @@ PlatformLinux::GetFileWithUUID (const FileSpec &platform_file,
 //------------------------------------------------------------------
 /// Default Constructor
 //------------------------------------------------------------------
-PlatformLinux::PlatformLinux (bool is_host) :
+PlatformAndroid::PlatformAndroid (bool is_host) :
     PlatformPOSIX(is_host)  // This is the local host platform
 {
 }
@@ -425,12 +425,12 @@ PlatformLinux::PlatformLinux (bool is_host) :
 /// The destructor is virtual since this class is designed to be
 /// inherited from by the plug-in instance.
 //------------------------------------------------------------------
-PlatformLinux::~PlatformLinux()
+PlatformAndroid::~PlatformAndroid()
 {
 }
 
 bool
-PlatformLinux::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info)
+PlatformAndroid::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info)
 {
     bool success = false;
     if (IsHost())
@@ -446,7 +446,7 @@ PlatformLinux::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_inf
 }
 
 bool
-PlatformLinux::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
+PlatformAndroid::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 {
     if (idx == 0)
     {
@@ -467,7 +467,7 @@ PlatformLinux::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 }
 
 void
-PlatformLinux::GetStatus (Stream &strm)
+PlatformAndroid::GetStatus (Stream &strm)
 {
     Platform::GetStatus(strm);
 
@@ -484,7 +484,7 @@ PlatformLinux::GetStatus (Stream &strm)
 }
 
 size_t
-PlatformLinux::GetSoftwareBreakpointTrapOpcode (Target &target, 
+PlatformAndroid::GetSoftwareBreakpointTrapOpcode (Target &target,
                                                 BreakpointSite *bp_site)
 {
     ArchSpec arch = target.GetArchitecture();
@@ -527,7 +527,7 @@ PlatformLinux::GetSoftwareBreakpointTrapOpcode (Target &target,
 }
 
 Error
-PlatformLinux::LaunchProcess (ProcessLaunchInfo &launch_info)
+PlatformAndroid::LaunchProcess (ProcessLaunchInfo &launch_info)
 {
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PLATFORM));
     Error error;
@@ -535,7 +535,7 @@ PlatformLinux::LaunchProcess (ProcessLaunchInfo &launch_info)
     if (IsHost())
     {
         if (log)
-            log->Printf ("PlatformLinux::%s() launching process as host", __FUNCTION__);
+            log->Printf ("PlatformAndroid::%s() launching process as host", __FUNCTION__);
 
         if (launch_info.GetFlags().Test (eLaunchFlagLaunchInShell))
         {
@@ -557,22 +557,22 @@ PlatformLinux::LaunchProcess (ProcessLaunchInfo &launch_info)
         if (m_remote_platform_sp)
         {
             if (log)
-                log->Printf ("PlatformLinux::%s() attempting to launch remote process", __FUNCTION__);
+                log->Printf ("PlatformAndroid::%s() attempting to launch remote process", __FUNCTION__);
             error = m_remote_platform_sp->LaunchProcess (launch_info);
         }
         else
         {
             if (log)
-                log->Printf ("PlatformLinux::%s() attempted to launch process but is not the host and no remote platform set", __FUNCTION__);
+                log->Printf ("PlatformAndroid::%s() attempted to launch process but is not the host and no remote platform set", __FUNCTION__);
             error.SetErrorString ("the platform is not currently connected");
         }
     }
     return error;
 }
 
-// Linux processes can not be launched by spawning and attaching.
+// Android processes can not be launched by spawning and attaching.
 bool
-PlatformLinux::CanDebugProcess ()
+PlatformAndroid::CanDebugProcess ()
 {
     // If we're the host, launch via normal host setup.
     if (IsHost ())
@@ -583,7 +583,7 @@ PlatformLinux::CanDebugProcess ()
 }
 
 lldb::ProcessSP
-PlatformLinux::Attach(ProcessAttachInfo &attach_info,
+PlatformAndroid::Attach(ProcessAttachInfo &attach_info,
                       Debugger &debugger,
                       Target *target,
                       Listener &listener,
@@ -631,22 +631,22 @@ PlatformLinux::Attach(ProcessAttachInfo &attach_info,
 }
 
 void
-PlatformLinux::CalculateTrapHandlerSymbolNames ()
+PlatformAndroid::CalculateTrapHandlerSymbolNames ()
 {   
     m_trap_handlers.push_back (ConstString ("_sigtramp"));
 }   
 
 Error
-PlatformLinux::LaunchNativeProcess (
+PlatformAndroid::LaunchNativeProcess (
     ProcessLaunchInfo &launch_info,
     lldb_private::NativeProcessProtocol::NativeDelegate &native_delegate,
     NativeProcessProtocolSP &process_sp)
 {
-#if !defined(__linux__) || defined(ANDROID)
-    return Error("only implemented on Linux hosts");
+#if !defined(__linux__)
+    return Error("only implemented on Android hosts");
 #else
     if (!IsHost ())
-        return Error("PlatformLinux::%s (): cannot launch a debug process when not the host", __FUNCTION__);
+        return Error("PlatformAndroid::%s (): cannot launch a debug process when not the host", __FUNCTION__);
 
     // Retrieve the exe module.
     lldb::ModuleSP exe_module_sp;
@@ -664,7 +664,7 @@ PlatformLinux::LaunchNativeProcess (
         return Error("exe_module_sp could not be resolved for %s", launch_info.GetExecutableFile ().GetPath ().c_str ());
 
     // Launch it for debugging
-    error = NativeProcessLinux::LaunchProcess (
+    error = NativeProcessAndroid::LaunchProcess (
         exe_module_sp.get (),
         launch_info,
         native_delegate,
@@ -675,17 +675,17 @@ PlatformLinux::LaunchNativeProcess (
 }
 
 Error
-PlatformLinux::AttachNativeProcess (lldb::pid_t pid,
+PlatformAndroid::AttachNativeProcess (lldb::pid_t pid,
                                     lldb_private::NativeProcessProtocol::NativeDelegate &native_delegate,
                                     NativeProcessProtocolSP &process_sp)
 {
-#if !defined(__linux__) || defined(ANDROID)
-    return Error("only implemented on Linux hosts");
+#if !defined(__linux__)
+    return Error("only implemented on Android hosts");
 #else
     if (!IsHost ())
-        return Error("PlatformLinux::%s (): cannot attach to a debug process when not the host", __FUNCTION__);
+        return Error("PlatformAndroid::%s (): cannot attach to a debug process when not the host", __FUNCTION__);
 
     // Launch it for debugging
-    return NativeProcessLinux::AttachToProcess (pid, native_delegate, process_sp);
+    return NativeProcessAndroid::AttachToProcess (pid, native_delegate, process_sp);
 #endif
 }

@@ -16,6 +16,8 @@
 using namespace lldb;
 using namespace lldb_private;
 
+#ifndef ANDROID
+
 HostThreadPosix::HostThreadPosix()
 {
 }
@@ -65,3 +67,41 @@ HostThreadPosix::Detach()
     Reset();
     return error;
 }
+
+#else // ANDROID
+
+HostThreadPosix::HostThreadPosix()
+{
+}
+
+HostThreadPosix::HostThreadPosix(lldb::thread_t thread)
+    : HostNativeThreadBase(thread)
+{
+}
+
+HostThreadPosix::~HostThreadPosix()
+{
+}
+
+Error
+HostThreadPosix::Join(lldb::thread_result_t *result)
+{
+    Error error;
+    return error;
+}
+
+Error
+HostThreadPosix::Cancel()
+{
+    Error error;
+    return error;
+}
+
+Error
+HostThreadPosix::Detach()
+{
+    Error error;
+    return error;
+}
+
+#endif // ANDROID

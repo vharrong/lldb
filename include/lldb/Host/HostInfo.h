@@ -38,8 +38,13 @@
 #include "lldb/Host/windows/HostInfoWindows.h"
 #define HOST_INFO_TYPE HostInfoWindows
 #elif defined(__linux__)
+#ifdef ANDROID
+#include "lldb/Host/android/HostInfoAndroid.h"
+#define HOST_INFO_TYPE HostInfoAndroid
+#else
 #include "lldb/Host/linux/HostInfoLinux.h"
 #define HOST_INFO_TYPE HostInfoLinux
+#endif // ANDROID
 #elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
 #include "lldb/Host/freebsd/HostInfoFreeBSD.h"
 #define HOST_INFO_TYPE HostInfoFreeBSD

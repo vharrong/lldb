@@ -1,4 +1,4 @@
-//===-- HostInfoLinux.cpp ---------------------------------------*- C++ -*-===//
+//===-- HostInfoAndroid.cpp ---------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "lldb/Core/Log.h"
-#include "lldb/Host/linux/HostInfoLinux.h"
+#include "lldb/Host/android/HostInfoAndroid.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -21,9 +21,9 @@ using namespace lldb_private;
 
 namespace
 {
-struct HostInfoLinuxFields
+struct HostInfoAndroidFields
 {
-    HostInfoLinuxFields()
+    HostInfoAndroidFields()
         : m_os_major(0)
         , m_os_minor(0)
         , m_os_update(0)
@@ -36,19 +36,19 @@ struct HostInfoLinuxFields
     uint32_t m_os_update;
 };
 
-HostInfoLinuxFields *g_fields = nullptr;
+HostInfoAndroidFields *g_fields = nullptr;
 }
 
 void
-HostInfoLinux::Initialize()
+HostInfoAndroid::Initialize()
 {
     HostInfoPosix::Initialize();
 
-    g_fields = new HostInfoLinuxFields();
+    g_fields = new HostInfoAndroidFields();
 }
 
 bool
-HostInfoLinux::GetOSVersion(uint32_t &major, uint32_t &minor, uint32_t &update)
+HostInfoAndroid::GetOSVersion(uint32_t &major, uint32_t &minor, uint32_t &update)
 {
     static bool is_initialized = false;
     static bool success = false;
@@ -83,7 +83,7 @@ finished:
 }
 
 llvm::StringRef
-HostInfoLinux::GetDistributionId()
+HostInfoAndroid::GetDistributionId()
 {
     static bool is_initialized = false;
     // Try to run 'lbs_release -i', and use that response
@@ -95,7 +95,7 @@ HostInfoLinux::GetDistributionId()
 
         Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_HOST));
         if (log)
-            log->Printf("attempting to determine Linux distribution...");
+            log->Printf("attempting to determine Android distribution...");
 
         // check if the lsb_release command exists at one of the
         // following paths
@@ -173,7 +173,7 @@ HostInfoLinux::GetDistributionId()
 }
 
 FileSpec
-HostInfoLinux::GetProgramFileSpec()
+HostInfoAndroid::GetProgramFileSpec()
 {
     static FileSpec g_program_filespec;
 
@@ -192,14 +192,14 @@ HostInfoLinux::GetProgramFileSpec()
 }
 
 bool
-HostInfoLinux::ComputeSystemPluginsDirectory(FileSpec &file_spec)
+HostInfoAndroid::ComputeSystemPluginsDirectory(FileSpec &file_spec)
 {
     file_spec.SetFile("/usr/lib/lldb", true);
     return true;
 }
 
 bool
-HostInfoLinux::ComputeUserPluginsDirectory(FileSpec &file_spec)
+HostInfoAndroid::ComputeUserPluginsDirectory(FileSpec &file_spec)
 {
     // XDG Base Directory Specification
     // http://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
@@ -219,13 +219,13 @@ HostInfoLinux::ComputeUserPluginsDirectory(FileSpec &file_spec)
 }
 
 void
-HostInfoLinux::ComputeHostArchitectureSupport(ArchSpec &arch_32, ArchSpec &arch_64)
+HostInfoAndroid::ComputeHostArchitectureSupport(ArchSpec &arch_32, ArchSpec &arch_64)
 {
     HostInfoPosix::ComputeHostArchitectureSupport(arch_32, arch_64);
 
     const char *distribution_id = GetDistributionId().data();
 
-    // On Linux, "unknown" in the vendor slot isn't what we want for the default
+    // On Android, "unknown" in the vendor slot isn't what we want for the default
     // triple.  It's probably an artifact of config.guess.
     if (arch_32.IsValid())
     {

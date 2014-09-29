@@ -1,4 +1,4 @@
-//===-- source/Host/linux/Host.cpp ------------------------------*- C++ -*-===//
+//===-- source/Host/android/Host.cpp ------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <fcntl.h>
+//#include <execinfo.h>
 
 // C++ Includes
 // Other libraries and framework includes
@@ -28,7 +29,8 @@
 
 #include "lldb/Core/ModuleSpec.h"
 #include "lldb/Symbol/ObjectFile.h"
-#include "Plugins/Process/Linux/ProcFileReader.h"
+#include "Plugins/Process/Android/ProcFileReader.h"
+#include "Plugins/Process/Utility/LinuxSignals.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -100,7 +102,7 @@ ReadProcPseudoFileStat (lldb::pid_t pid, ProcessStatInfo& stat_info)
 }
 
 static void
-GetLinuxProcessUserAndGroup (lldb::pid_t pid, ProcessInstanceInfo &process_info, lldb::pid_t &tracerpid)
+GetAndroidProcessUserAndGroup (lldb::pid_t pid, ProcessInstanceInfo &process_info, lldb::pid_t &tracerpid)
 {
     tracerpid = 0;
     uint32_t rUid = UINT32_MAX;     // Real User ID
@@ -145,21 +147,6 @@ GetLinuxProcessUserAndGroup (lldb::pid_t pid, ProcessInstanceInfo &process_info,
     process_info.SetGroupID (rGid);
     process_info.SetEffectiveGroupID (eGid);
 }
-
-#ifdef ANDROID
-#include <string>
-#include <sstream>
-namespace std
-{
-  template <typename T>
-  string to_string(T value)
-  {
-    std::ostringstream os ;
-    os << value ;
-    return os.str() ;
-  }
-}
-#endif // ANDROID
 
 lldb::DataBufferSP
 Host::GetAuxvData(lldb_private::Process *process)
@@ -243,6 +230,7 @@ bool
 Host::FindProcessThreads (const lldb::pid_t pid, TidMap &tids_to_attach)
 {
     bool tids_changed = false;
+#if 0
     static const char procdir[] = "/proc/";
     static const char taskdir[] = "/task/";
     std::string process_task_dir = procdir + std::to_string(pid) + taskdir;
@@ -266,7 +254,7 @@ Host::FindProcessThreads (const lldb::pid_t pid, TidMap &tids_to_attach)
         }
         closedir (dirproc);
     }
-
+#endif
     return tids_changed;
 }
 
@@ -281,7 +269,7 @@ GetELFProcessCPUType (const char *exe_path, ProcessInstanceInfo &process_info)
     const size_t num_specs = ObjectFile::GetModuleSpecifications (filespec, 0, 0, specs);
     // GetModuleSpecifications() could fail if the executable has been deleted or is locked.
     // But it shouldn't return more than 1 architecture.
-    assert(num_specs <= 1 && "Linux plugin supports only a single architecture");
+    assert(num_specs <= 1 && "Android plugin supports only a single architecture");
     if (num_specs == 1)
     {
         ModuleSpec module_spec;
@@ -371,7 +359,7 @@ GetProcessAndStatInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info, Proce
     }
 
     // Get User and Group IDs and get tracer pid.
-    GetLinuxProcessUserAndGroup (pid, process_info, tracerpid);
+    GetAndroidProcessUserAndGroup (pid, process_info, tracerpid);
 
     return true;
 }
@@ -386,42 +374,10 @@ Host::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info)
 }
 
 void
-Host::ThreadCreated (const char *thread_name)
-{
-    if (!Host::SetThreadName (LLDB_INVALID_PROCESS_ID, LLDB_INVALID_THREAD_ID, thread_name))
-    {
-        Host::SetShortThreadName (LLDB_INVALID_PROCESS_ID, LLDB_INVALID_THREAD_ID, thread_name, 16);
-    }
-}
-
-std::string
-Host::GetThreadName (lldb::pid_t pid, lldb::tid_t tid)
-{
-    assert(pid != LLDB_INVALID_PROCESS_ID);
-    assert(tid != LLDB_INVALID_THREAD_ID);
-
-    // Read /proc/$TID/comm file.
-    lldb::DataBufferSP buf_sp = ProcFileReader::ReadIntoDataBuffer (tid, "comm");
-    const char *comm_str = (const char *)buf_sp->GetBytes();
-    const char *cr_str = ::strchr(comm_str, '\n');
-    size_t length = cr_str ? (cr_str - comm_str) : strlen(comm_str);
-
-    std::string thread_name(comm_str, length);
-    return thread_name;
-}
-
-Error
-Host::LaunchProcess (ProcessLaunchInfo &launch_info)
-{
-    Error error;
-    assert(!"Not implemented yet!!!");
-    return error;
-}
-
-void
 Host::Backtrace (Stream &strm, uint32_t max_frames)
 {
-#ifndef /*TODO*/ ANDROID
+	assert(!"not implemented");
+#if 0
     if (max_frames > 0)
     {
         std::vector<void *> frame_buffer (max_frames, NULL);
@@ -435,8 +391,6 @@ Host::Backtrace (Stream &strm, uint32_t max_frames)
             ::free (strs);
         }
     }
-#else
-    assert(!"Not implemented yet!!!");
 #endif
 }
 
@@ -450,3 +404,11 @@ Host::GetEnvironment (StringList &env)
         env.AppendString(env_entry);
     return i;
 }
+
+const lldb_private::UnixSignalsSP&
+Host::GetUnixSignals ()
+{
+    static const lldb_private::UnixSignalsSP s_unix_signals_sp (new process_linux::LinuxSignals ());
+    return s_unix_signals_sp;
+}
+
