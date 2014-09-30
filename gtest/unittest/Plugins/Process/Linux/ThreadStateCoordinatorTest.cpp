@@ -14,6 +14,14 @@ namespace
     {
         // Do nothing.
     }
+
+    void
+    StdoutLogger (const char *format, va_list args)
+    {
+        // Print to stdout.
+        vprintf (format, args);
+        printf ("\n");
+    }
 }
 
 TEST(ThreadStateCoordinatorTest, StopCoordinatorWorksNoPriorEvents)
@@ -403,3 +411,91 @@ TEST(ThreadStateCoordinatorTest, ExistingPendingNotificationRequiresStopFromNewT
     ASSERT_EQ (TRIGGERING_TID, reported_firing_tid);
 }
 
+TEST(ThreadStateCoordinatorTest, DeferredNotificationRemovedByResetForExec)
+{
+    ThreadStateCoordinator coordinator(NOPLogger);
+
+    const lldb::tid_t TRIGGERING_TID = 4105;
+    bool call_after_fired = false;
+    lldb::tid_t reported_firing_tid = 0;
+
+    // Notify we have a trigger that needs to be fired when all threads in the wait tid set have stopped.
+    coordinator.CallAfterThreadsStop (TRIGGERING_TID,
+                                      EMPTY_THREAD_ID_SET,
+                                      [](lldb::tid_t tid) {},
+                                      [&](lldb::tid_t tid) {
+                                          call_after_fired = true;
+                                          reported_firing_tid = tid;
+                                      });
+
+    // Notification trigger shouldn't go off yet.
+    ASSERT_EQ (false, call_after_fired);
+
+    // Now indicate an exec occurred, which will invalidate all state about the process and threads.
+    coordinator.ResetForExec ();
+
+    // Verify the deferred stop notification does *not* fire with the next
+    // process.  It will handle the reset and not the deferred signaling, which
+    // should now be removed.
+    ASSERT_EQ (true, coordinator.ProcessNextEvent ());
+    ASSERT_EQ (false, call_after_fired);
+}
+
+
+TEST(ThreadStateCoordinatorTest, RequestThreadResumeCallsCallbackWhenThreadIsStopped)
+{
+    ThreadStateCoordinator coordinator(NOPLogger);
+
+    // Initialize thread to be in stopped state.
+    const lldb::tid_t TEST_TID = 1234;
+
+    coordinator.NotifyThreadStop (TEST_TID);
+    ASSERT_EQ (true, coordinator.ProcessNextEvent ());
+
+    // Request a resume.
+    lldb::tid_t resumed_tid = 0;
+    int resume_call_count = 0;
+
+    coordinator.RequestThreadResume (TEST_TID,
+                                     [&](lldb::tid_t tid)
+                                     {
+                                         ++resume_call_count;
+                                         resumed_tid = tid;
+                                     });
+
+    // Shouldn't be called yet.
+    ASSERT_EQ (0, resume_call_count);
+
+    // Process next event.  After that, the resume request call should have fired.
+    ASSERT_EQ (true, coordinator.ProcessNextEvent ());
+    ASSERT_EQ (1, resume_call_count);
+    ASSERT_EQ (TEST_TID, resumed_tid);
+}
+
+TEST(ThreadStateCoordinatorTest, RequestThreadResumeIgnoresCallbackWhenThreadIsRunning)
+{
+    ThreadStateCoordinator coordinator(StdoutLogger);
+
+    // This thread will be assumed running (i.e. unknown, assumed running until marked stopped.)
+    const lldb::tid_t TEST_TID = 1234;
+
+    // Request a resume.
+    lldb::tid_t resumed_tid = 0;
+    int resume_call_count = 0;
+
+    coordinator.RequestThreadResume (TEST_TID,
+                                     [&](lldb::tid_t tid)
+                                     {
+                                         ++resume_call_count;
+                                         resumed_tid = tid;
+                                     });
+
+    // Shouldn't be called yet.
+    ASSERT_EQ (0, resume_call_count);
+
+    // Process next event.
+    ASSERT_EQ (true, coordinator.ProcessNextEvent ());
+
+    // The resume request should not have gone off because we think it is already running.
+    ASSERT_EQ (0, resume_call_count);
+}
