@@ -78,7 +78,7 @@
 
 
 #if defined (__linux__)
-#if defined (ANDROID)
+#if defined (__ANDROID_NDK__)
 #include "Plugins/Process/Android/ProcessAndroid.h"
 #else
 #include "Plugins/Process/Linux/ProcessLinux.h"
@@ -183,14 +183,14 @@ lldb_private::Initialize ()
         SystemRuntimeMacOSX::Initialize();
 #endif
 #if defined (__linux__)
-#if defined (ANDROID)
+#if defined (__ANDROID_NDK__)
         ProcessAndroid::Initialize();
 #else
         //----------------------------------------------------------------------
         // Linux hosted plugins
         //----------------------------------------------------------------------
         ProcessLinux::Initialize();
-#endif
+#endif // __ANDROID_NDK__
 #endif
 #if defined(_WIN32)
         ProcessWindows::Initialize();
@@ -279,11 +279,11 @@ lldb_private::Terminate ()
     Debugger::SettingsTerminate ();
 
 #if defined (__linux__)
-#if defined (ANDROID)
+#if defined (__ANDROID_NDK__)
     ProcessAndroid::Terminate();
 #else
     ProcessLinux::Terminate();
-#endif
+#endif // __ANDROID_NDK__
 #endif
 
 #if defined (__FreeBSD__)

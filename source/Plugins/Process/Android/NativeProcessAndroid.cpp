@@ -280,7 +280,7 @@ namespace
         PtraceDisplayBytes(req, data, data_size);
 
         errno = 0;
-#ifdef ANDROID
+#ifdef __ANDROID_NDK__
         result = ptrace(static_cast<__ptrace_request>(req), static_cast< ::pid_t>(pid), addr, data);
 #else
         if (req == PTRACE_GETREGSET || req == PTRACE_SETREGSET)

@@ -1,4 +1,4 @@
-//===-- EditLineWin.cpp -----------------------------------------*- C++ -*-===//
+//===-- EditLineAndroid.cpp -----------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if defined( ANDROID )
+#if defined( __ANDROID_NDK__ )
 
 #include "lldb/Host/android/editlineandroid.h"
 #include <vector>

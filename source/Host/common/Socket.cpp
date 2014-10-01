@@ -18,7 +18,7 @@
 #include "lldb/Host/TimeValue.h"
 #include "lldb/Interpreter/Args.h"
 
-#ifdef ANDROID
+#ifdef __ANDROID_NDK__
 #include <linux/tcp.h>
 #include <bits/error_constants.h>
 #include <asm-generic/errno-base.h>

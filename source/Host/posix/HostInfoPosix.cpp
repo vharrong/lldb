@@ -24,7 +24,7 @@
 
 using namespace lldb_private;
 
-#ifndef ANDROID
+#ifndef __ANDROID_NDK__
 
 size_t
 HostInfoPosix::GetPageSize()
@@ -198,7 +198,7 @@ HostInfoPosix::ComputePythonDirectory(FileSpec &file_spec)
 #endif
 }
 
-#else // #ifndef ANDROID
+#else // #ifndef __ANDROID_NDK__
 
 size_t
 HostInfoPosix::GetPageSize()
@@ -267,4 +267,4 @@ HostInfoPosix::ComputePythonDirectory(FileSpec &file_spec)
     return true;
 }
 
-#endif // #ifndef ANDROID
+#endif // __ANDROID_NDK__

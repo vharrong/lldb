@@ -185,7 +185,7 @@ PtraceWrapper(int req, lldb::pid_t pid, void *addr, void *data, size_t data_size
     PtraceDisplayBytes(req, data, data_size);
 
     errno = 0;
-#ifdef ANDROID
+#ifdef __ANDROID_NDK__
     result = ptrace(static_cast<__ptrace_request>(req), static_cast<pid_t>(pid), addr, data);
 #else
     if (req == PTRACE_GETREGSET || req == PTRACE_SETREGSET)
@@ -224,7 +224,7 @@ PtraceWrapper(int req, pid_t pid, void *addr, void *data, size_t data_size)
 {
     long result = 0;
     errno = 0;
-#ifdef ANDROID
+#ifdef __ANDROID_NDK__
     result = ptrace(static_cast<__ptrace_request>(req), pid, addr, data);
 #else
     if (req == PTRACE_GETREGSET || req == PTRACE_SETREGSET)

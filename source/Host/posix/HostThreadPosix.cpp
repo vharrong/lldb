@@ -16,7 +16,7 @@
 using namespace lldb;
 using namespace lldb_private;
 
-#ifndef ANDROID
+#ifndef __ANDROID_NDK__
 
 HostThreadPosix::HostThreadPosix()
 {
@@ -68,7 +68,7 @@ HostThreadPosix::Detach()
     return error;
 }
 
-#else // ANDROID
+#else // __ANDROID_NDK__
 
 HostThreadPosix::HostThreadPosix()
 {
@@ -104,4 +104,4 @@ HostThreadPosix::Detach()
     return error;
 }
 
-#endif // ANDROID
+#endif // __ANDROID_NDK__

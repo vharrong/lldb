@@ -72,7 +72,7 @@ else()
       )
 
   elseif (CMAKE_SYSTEM_NAME MATCHES "Linux")
-    if (ANDROID)
+    if (__ANDROID_NDK__)
       add_host_subdirectory(android
         android/Host.cpp
         android/HostInfoAndroid.cpp

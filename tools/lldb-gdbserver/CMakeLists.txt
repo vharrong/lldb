@@ -100,7 +100,7 @@ endif ()
 
 # Linux-only libraries
 if ( CMAKE_SYSTEM_NAME MATCHES "Linux" )
-  if (ANDROID)
+  if (__ANDROID_NDK__)
     list(APPEND LLDB_USED_LIBS
       lldbPluginProcessAndroid
       lldbPluginProcessPOSIX
@@ -163,7 +163,7 @@ set( CLANG_USED_LIBS
   )
 
 set(LLDB_SYSTEM_LIBS)
-if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows" AND NOT ANDROID)
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows" AND NOT __ANDROID_NDK__)
   list(APPEND LLDB_SYSTEM_LIBS edit panel ncurses)
 endif()
 # On FreeBSD backtrace() is provided by libexecinfo, not libc.

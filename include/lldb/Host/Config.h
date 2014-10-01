@@ -14,7 +14,7 @@
 
 #include "lldb/Host/macosx/Config.h"
 
-#elif defined(ANDROID)
+#elif defined(__ANDROID_NDK__)
 
 #include "lldb/Host/android/Config.h"
 

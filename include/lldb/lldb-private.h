@@ -16,7 +16,7 @@
 #include "lldb/Host/windows/win32.h"
 #endif
 
-#ifdef ANDROID
+#ifdef __ANDROID_NDK__
 #include "lldb/Host/android/Android.h"
 #endif
 

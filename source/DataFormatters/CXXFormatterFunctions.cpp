@@ -1325,7 +1325,7 @@ lldb_private::formatters::ObjCSELSummaryProvider (ValueObject& valobj, Stream& s
     return true;
 }
 
-#ifdef ANDROID
+#ifdef __ANDROID_NDK__
 // this function is not currently implemented in NDK
 time_t
 timegm(struct tm *tm)

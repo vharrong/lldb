@@ -104,7 +104,7 @@
     #include <pthread.h>
     #include <sys/time.h>
 
-#if !defined(ANDROID)
+#if !defined(__ANDROID_NDK__)
 	#include <histedit.h>
 	#if defined(__FreeBSD__) || defined(__NetBSD__)
     	#include <readline/readline.h>

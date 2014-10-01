@@ -896,7 +896,7 @@ File::CalculateInteractiveAndTerminal ()
     {
         m_is_interactive = eLazyBoolNo;
         m_is_real_terminal = eLazyBoolNo;
-#if (defined(_WIN32) || defined(ANDROID))
+#if (defined(_WIN32) || defined(__ANDROID_NDK__))
         if (_isatty(fd))
         {
             m_is_interactive = eLazyBoolYes;

@@ -31,7 +31,7 @@ char *ptsname(int fd) { return 0; }
 
 pid_t fork(void) { return 0; }
 pid_t setsid(void) { return 0; }
-#elif defined(ANDROID)
+#elif defined(__ANDROID_NDK__)
 // empty functions
 int posix_openpt(int flag) { return 0; }
 #endif

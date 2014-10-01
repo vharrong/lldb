@@ -16,7 +16,7 @@
 #include <stdio.h>
 #if defined(_WIN32)
 #include "lldb/Host/windows/editlinewin.h"
-#elif defined(ANDROID)
+#elif defined(__ANDROID_NDK__)
 #include "lldb/Host/android/editlineandroid.h"
 #else
 #include <histedit.h>
