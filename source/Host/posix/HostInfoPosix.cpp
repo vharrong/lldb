@@ -71,6 +71,7 @@ HostInfoPosix::LookupUserName(uint32_t uid, std::string &user_name)
 const char *
 HostInfoPosix::LookupGroupName(uint32_t gid, std::string &group_name)
 {
+#ifndef __ANDROID__
     char group_buffer[PATH_MAX];
     size_t group_buffer_size = sizeof(group_buffer);
     struct group group_info;
@@ -96,6 +97,9 @@ HostInfoPosix::LookupGroupName(uint32_t gid, std::string &group_name)
         }
     }
     group_name.clear();
+#else
+    assert(false && "getgrgid_r() not supported on Android");
+#endif
     return NULL;
 }
 
