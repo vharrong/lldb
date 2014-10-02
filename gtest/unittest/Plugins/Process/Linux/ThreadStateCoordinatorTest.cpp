@@ -205,6 +205,30 @@ TEST_F (ThreadStateCoordinatorTest, StopCoordinatorWorksNoPriorEvents)
     ASSERT_EQ (false, HasError ());
 }
 
+TEST_F (ThreadStateCoordinatorTest, NotifyThreadCreateSignalsErrorOnAlreadyKnownThread)
+{
+    // Let the coordinator know about our thread.
+    SetupKnownStoppedThread (TRIGGERING_TID);
+
+    // Notify the thread was created - again.
+    NotifyThreadCreate (TRIGGERING_TID, true);
+
+    // This should error out.
+    ASSERT_PROCESS_NEXT_EVENT_FAILS ();
+}
+
+
+TEST_F (ThreadStateCoordinatorTest, NotifyThreadDeathSignalsErrorOnUnknownThread)
+{
+    const lldb::tid_t UNKNOWN_TID = 678;
+
+    // Notify an unknown thread has died.
+    NotifyThreadDeath (UNKNOWN_TID);
+
+    // This should error out.
+    ASSERT_PROCESS_NEXT_EVENT_FAILS ();
+}
+
 TEST_F (ThreadStateCoordinatorTest, NotifyThreadStopSignalsErrorOnUnknownThread)
 {
     const lldb::tid_t UNKNOWN_TID = 678;
