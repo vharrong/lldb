@@ -642,7 +642,7 @@ PlatformAndroid::LaunchNativeProcess (
     lldb_private::NativeProcessProtocol::NativeDelegate &native_delegate,
     NativeProcessProtocolSP &process_sp)
 {
-#if !defined(__linux__)
+#if !defined(__ANDROID_NDK__)
     return Error("only implemented on Android hosts");
 #else
     if (!IsHost ())
@@ -679,7 +679,7 @@ PlatformAndroid::AttachNativeProcess (lldb::pid_t pid,
                                     lldb_private::NativeProcessProtocol::NativeDelegate &native_delegate,
                                     NativeProcessProtocolSP &process_sp)
 {
-#if !defined(__linux__)
+#if !defined(__ANDROID_NDK__)
     return Error("only implemented on Android hosts");
 #else
     if (!IsHost ())
