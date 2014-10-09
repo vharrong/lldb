@@ -2692,64 +2692,67 @@ NativeProcessLinux::Resume (const ResumeActionList &resume_actions)
 
     std::vector<NativeThreadProtocolSP> new_stop_threads;
 
-    Mutex::Locker locker (m_threads_mutex);
-    for (auto thread_sp : m_threads)
+    // Scope for threads mutex.
     {
-        assert (thread_sp && "thread list should not contain NULL threads");
-        NativeThreadLinux *const linux_thread_p = reinterpret_cast<NativeThreadLinux*> (thread_sp.get ());
-
-        const ResumeAction *const action = resume_actions.GetActionForThread (thread_sp->GetID (), true);
-        assert (action && "NULL ResumeAction returned for thread during Resume ()");
-
-        if (log)
+        Mutex::Locker locker (m_threads_mutex);
+        for (auto thread_sp : m_threads)
         {
-            log->Printf ("NativeProcessLinux::%s processing resume action state %s for pid %" PRIu64 " tid %" PRIu64, 
-                    __FUNCTION__, StateAsCString (action->state), GetID (), thread_sp->GetID ());
-        }
+            assert (thread_sp && "thread list should not contain NULL threads");
+            NativeThreadLinux *const linux_thread_p = reinterpret_cast<NativeThreadLinux*> (thread_sp.get ());
 
-        switch (action->state)
-        {
-        case eStateRunning:
-        {
-            // Run the thread, possibly feeding it the signal.
-            const int signo = action->signal;
-            m_coordinator_up->RequestThreadResume (thread_sp->GetID (),
-                                                   [=](lldb::tid_t tid_to_resume)
-                                                   {
-                                                       reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetRunning ();
-                                                       // Pass this signal number on to the inferior to handle.
-                                                       Resume (tid_to_resume, (signo > 0) ? signo : LLDB_INVALID_SIGNAL_NUMBER);
-                                                   },
-                                                   CoordinatorErrorHandler);
-            break;
-        }
+            const ResumeAction *const action = resume_actions.GetActionForThread (thread_sp->GetID (), true);
+            assert (action && "NULL ResumeAction returned for thread during Resume ()");
 
-        case eStateStepping:
-            linux_thread_p->SetStepping ();
-            if (SingleStep (thread_sp->GetID (), 0))
+            if (log)
             {
-                if (log)
-                    log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 " single step succeeded",
-                                 __FUNCTION__, GetID (), thread_sp->GetID ());
+                log->Printf ("NativeProcessLinux::%s processing resume action state %s for pid %" PRIu64 " tid %" PRIu64, 
+                        __FUNCTION__, StateAsCString (action->state), GetID (), thread_sp->GetID ());
             }
-            else
+
+            switch (action->state)
             {
-                if (log)
-                    log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 " single step failed",
-                                 __FUNCTION__, GetID (), thread_sp->GetID ());
+            case eStateRunning:
+            {
+                // Run the thread, possibly feeding it the signal.
+                const int signo = action->signal;
+                m_coordinator_up->RequestThreadResume (thread_sp->GetID (),
+                                                       [=](lldb::tid_t tid_to_resume)
+                                                       {
+                                                           reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetRunning ();
+                                                           // Pass this signal number on to the inferior to handle.
+                                                           Resume (tid_to_resume, (signo > 0) ? signo : LLDB_INVALID_SIGNAL_NUMBER);
+                                                       },
+                                                       CoordinatorErrorHandler);
+                break;
             }
-            break;
 
-        case eStateSuspended:
-        case eStateStopped:
-            // if we haven't chosen a stop thread id yet, use this one.
-            if (stop_thread_id == LLDB_INVALID_THREAD_ID)
-                stop_thread_id = thread_sp->GetID ();
-            break;
+            case eStateStepping:
+                linux_thread_p->SetStepping ();
+                if (SingleStep (thread_sp->GetID (), 0))
+                {
+                    if (log)
+                        log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 " single step succeeded",
+                                     __FUNCTION__, GetID (), thread_sp->GetID ());
+                }
+                else
+                {
+                    if (log)
+                        log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " tid %" PRIu64 " single step failed",
+                                     __FUNCTION__, GetID (), thread_sp->GetID ());
+                }
+                break;
 
-        default:
-            return Error ("NativeProcessLinux::%s (): unexpected state %s specified for pid %" PRIu64 ", tid %" PRIu64,
-                    __FUNCTION__, StateAsCString (action->state), GetID (), thread_sp->GetID ());
+            case eStateSuspended:
+            case eStateStopped:
+                // if we haven't chosen a stop thread id yet, use this one.
+                if (stop_thread_id == LLDB_INVALID_THREAD_ID)
+                    stop_thread_id = thread_sp->GetID ();
+                break;
+
+            default:
+                return Error ("NativeProcessLinux::%s (): unexpected state %s specified for pid %" PRIu64 ", tid %" PRIu64,
+                        __FUNCTION__, StateAsCString (action->state), GetID (), thread_sp->GetID ());
+            }
         }
     }
 
@@ -3623,6 +3626,11 @@ NativeProcessLinux::StartCoordinatorThread ()
         return error;
     }
 
+    // Enable verbose logging if lldb thread logging is enabled.
+    m_coordinator_up->LogEnableEventProcessing (log != nullptr);
+
+    if (log)
+        log->Printf ("NativeProcessLinux::%s launching ThreadStateCoordinator thread for pid %" PRIu64, __FUNCTION__, GetID ());
     m_coordinator_thread = ThreadLauncher::LaunchThread(g_thread_name, CoordinatorThread, this, &error);
     return error;
 }
@@ -3630,16 +3638,25 @@ NativeProcessLinux::StartCoordinatorThread ()
 void *
 NativeProcessLinux::CoordinatorThread (void *arg)
 {
+    Log *const log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+
     NativeProcessLinux *const process = static_cast<NativeProcessLinux*> (arg);
     assert (process && "null process passed to CoordinatorThread");
     if (!process)
+    {
+        if (log)
+            log->Printf ("NativeProcessLinux::%s null process, exiting ThreadStateCoordinator processing loop", __FUNCTION__);
         return nullptr;
+    }
 
     // Run the thread state coordinator loop until it is done.  This call uses
     // efficient waiting for an event to be ready.
-    while (process->m_coordinator_up->ProcessNextEvent ())
+    while (process->m_coordinator_up->ProcessNextEvent () == ThreadStateCoordinator::eventLoopResultContinue)
     {
     }
+
+    if (log)
+        log->Printf ("NativeProcessLinux::%s pid %" PRIu64 " exiting ThreadStateCoordinator processing loop due to coordinator indicating completion", __FUNCTION__, process->GetID ());
 
     return nullptr;
 }
@@ -3647,6 +3664,10 @@ NativeProcessLinux::CoordinatorThread (void *arg)
 void
 NativeProcessLinux::StopCoordinatorThread()
 {
+    Log *const log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+    if (log)
+        log->Printf ("NativeProcessLinux::%s requesting ThreadStateCoordinator stop for pid %" PRIu64, __FUNCTION__, GetID ());
+
     // Tell the coordinator we're done.  This will cause the coordinator
     // run loop thread to exit when the processing queue hits this message.
     m_coordinator_up->StopCoordinator ();
