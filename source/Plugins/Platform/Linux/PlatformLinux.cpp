@@ -52,7 +52,8 @@ static uint32_t g_initialize_count = 0;
 
 namespace
 {
-    enum {
+    enum
+    {
         ePropertyUseLlgsForLocal = 0,
     };
 
@@ -714,7 +715,7 @@ PlatformLinux::DebugProcess (ProcessLaunchInfo &launch_info,
         process_sp->HijackProcessEvents (listener_sp.get ());
     }
 
-    // Log file actions.f
+    // Log file actions.
     if (log)
     {
         log->Printf ("PlatformLinux::%s launching process with the following file actions:", __FUNCTION__);
