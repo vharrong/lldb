@@ -483,25 +483,25 @@ GDBRemoteCommunicationServer::LaunchProcess ()
         return LaunchPlatformProcess ();
 }
 
-// Return false if a file action exists and does not point to /dev/null; true otherwise.
-static bool
-AreAllLaunchFileActionsForDevNull (const ProcessLaunchInfo &launch_info)
+bool
+GDBRemoteCommunicationServer::ShouldRedirectInferiorOutputOverGdbRemote (const lldb_private::ProcessLaunchInfo &launch_info) const
 {
-    size_t i = 0;
-    for (auto file_action = launch_info.GetFileActionAtIndex (i);
-         file_action;
-         ++i, file_action = launch_info.GetFileActionAtIndex (i))
+    // Retrieve the file actions specified for stdout and stderr.
+    auto stdout_file_action = launch_info.GetFileActionForFD (STDOUT_FILENO);
+    auto stderr_file_action = launch_info.GetFileActionForFD (STDERR_FILENO);
+
+    // If neither stdout and stderr file actions are specified, we're not doing anything special, so
+    // assume we want to redirect stdout/stderr over gdb-remote $O messages.
+    if ((stdout_file_action == nullptr) && (stderr_file_action == nullptr))
     {
-        // If the file action points to a path that is not /dev/null, we're done.
-        if (file_action->GetPath () && (strcmp(file_action->GetPath (), "/dev/null") != 0))
-        {
-            // We have a path and it's not to /dev/null.
-            return false;
-        }
+        // Send stdout/stderr over the gdb-remote protocol.
+        return true;
     }
 
-    // Either there were no file actions, no file actions with paths, or all file actions with paths were to /dev/null.
-    return true;
+    // Any other setting for either stdout or stderr implies we are either suppressing
+    // it (with /dev/null) or we've got it set to a PTY.  Either way, we don't want the
+    // output over gdb-remote.
+    return false;
 }
 
 lldb_private::Error
@@ -528,8 +528,10 @@ GDBRemoteCommunicationServer::LaunchProcessForDebugging ()
         return error;
     }
 
-    // Check if STDIO file descriptors to something other than /dev/null were provided.  If so, we use those for output handling; otherwise, we need to mirror inferior stdout/stderr over $O messages.
-    if (AreAllLaunchFileActionsForDevNull (m_process_launch_info))
+    // Handle mirroring of inferior stdout/stderr over the gdb-remote protocol as needed.
+    // llgs local-process debugging may specify PTYs, which will eliminate the need to reflect inferior
+    // stdout/stderr over the gdb-remote protocol.
+    if (ShouldRedirectInferiorOutputOverGdbRemote (m_process_launch_info))
     {
         if (log)
             log->Printf ("GDBRemoteCommunicationServer::%s pid %" PRIu64 " setting up stdout/stderr redirection via $O gdb-remote commands", __FUNCTION__, m_debugged_process_sp->GetID ());

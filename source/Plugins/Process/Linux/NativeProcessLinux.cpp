@@ -1572,7 +1572,6 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     NativeThreadProtocolSP thread_sp;
 
     lldb::ThreadSP inferior;
-    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
 
     // Propagate the environment if one is not supplied.
@@ -1583,7 +1582,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     {
         args->m_error.SetErrorToGenericError();
         args->m_error.SetErrorString("Process fork failed.");
-        goto FINISH;
+        return false;
     }
 
     // Recognized child exit status codes.
@@ -1600,48 +1599,21 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     // Child process.
     if (pid == 0)
     {
-        // FIXME log entries here don't log out, at least not to a file-based log.
-        if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process preparing to fork", __FUNCTION__);
+        // FIXME consider opening a pipe between parent/child and have this forked child
+        // send log info to parent re: launch status, in place of the log lines removed here.
 
-        // Trace this process.
-        if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process issuing PTRACE_TRACEME", __FUNCTION__);
-
+        // Start tracing this child that is about to exec.
         if (PTRACE(PTRACE_TRACEME, 0, NULL, NULL, 0) < 0)
-        {
-            if (log)
-                log->Printf ("NativeProcessLinux::%s inferior process PTRACE_TRACEME failed", __FUNCTION__);
             exit(ePtraceFailed);
-        }
 
         // Do not inherit setgid powers.
-        if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process resetting gid", __FUNCTION__);
-
         if (setgid(getgid()) != 0)
-        {
-            if (log)
-                log->Printf ("NativeProcessLinux::%s inferior process setgid() failed", __FUNCTION__);
             exit(eSetGidFailed);
-        }
 
         // Attempt to have our own process group.
-        // TODO verify if we really want this.
-        if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process resetting process group", __FUNCTION__);
-
         if (setpgid(0, 0) != 0)
         {
-            if (log)
-            {
-                const int error_code = errno;
-                log->Printf ("NativeProcessLinux::%s inferior setpgid() failed, errno=%d (%s), continuing with existing process group %" PRIu64,
-                        __FUNCTION__,
-                        error_code,
-                        strerror (error_code),
-                        static_cast<lldb::pid_t> (getpgid (0)));
-            }
+            // FIXME log that this failed. This is common.
             // Don't allow this to prevent an inferior exec.
         }
 
@@ -1669,33 +1641,35 @@ NativeProcessLinux::Launch(LaunchArgs *args)
             const int old_personality = personality (LLDB_PERSONALITY_GET_CURRENT_SETTINGS);
             if (old_personality == -1)
             {
-                if (log)
-                    log->Printf ("NativeProcessLinux::%s retrieval of Linux personality () failed: %s. Cannot disable ASLR.", __FUNCTION__, strerror (errno));
+                // Can't retrieve Linux personality.  Cannot disable ASLR.
             }
             else
             {
                 const int new_personality = personality (ADDR_NO_RANDOMIZE | old_personality);
                 if (new_personality == -1)
                 {
-                    if (log)
-                        log->Printf ("NativeProcessLinux::%s setting of Linux personality () to disable ASLR failed, ignoring: %s", __FUNCTION__, strerror (errno));
-
+                    // Disabling ASLR failed.
                 }
                 else
                 {
-                    if (log)
-                        log->Printf ("NativeProcessLinux::%s disabling ASLR: SUCCESS", __FUNCTION__);
-
+                    // Disabling ASLR succeeded.
                 }
             }
         }
 
-        // Execute.  We should never return.
+        // Execute.  We should never return...
         execve(argv[0],
                const_cast<char *const *>(argv),
                const_cast<char *const *>(envp));
+
+        // ...unless exec fails.  In which case we definitely need to end the child here.
         exit(eExecFailed);
     }
+
+    //
+    // This is the parent code here.
+    //
+    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
     // Wait for the child process to trap on its call to execve.
     ::pid_t wpid;
@@ -1711,7 +1685,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
         // FIXME this could really use a new state - eStateLaunchFailure.  For now, using eStateInvalid.
         monitor->SetState (StateType::eStateInvalid);
 
-        goto FINISH;
+        return false;
     }
     else if (WIFEXITED(status))
     {
@@ -1756,7 +1730,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
         // FIXME this could really use a new state - eStateLaunchFailure.  For now, using eStateInvalid.
         monitor->SetState (StateType::eStateInvalid);
 
-        goto FINISH;
+        return false;
     }
     assert(WIFSTOPPED(status) && (wpid == static_cast< ::pid_t> (pid)) &&
            "Could not sync with inferior process.");
@@ -1776,7 +1750,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
         // FIXME this could really use a new state - eStateLaunchFailure.  For now, using eStateInvalid.
         monitor->SetState (StateType::eStateInvalid);
 
-        goto FINISH;
+        return false;
     }
 
     // Release the master terminal descriptor and pass it off to the
@@ -1798,7 +1772,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
         // FIXME this could really use a new state - eStateLaunchFailure.  For now, using eStateInvalid.
         monitor->SetState (StateType::eStateInvalid);
 
-        goto FINISH;
+        return false;
     }
 
     if (log)
@@ -1813,7 +1787,6 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     monitor->SetCurrentThreadID (thread_sp->GetID ());
     monitor->SetState (StateType::eStateStopped);
 
-FINISH:
     if (log)
     {
         if (args->m_error.Success ())
@@ -2345,7 +2318,6 @@ NativeProcessLinux::MonitorSIGTRAP(const siginfo_t *info, lldb::pid_t pid)
                                                    Resume (tid_to_resume, LLDB_INVALID_SIGNAL_NUMBER);
                                                },
                                                CoordinatorErrorHandler);
-
         break;
     }
 

@@ -2178,18 +2178,17 @@ Target::RunStopHooks ()
                 
                 if (print_thread_header)
                     result.AppendMessageWithFormat("-- Thread %d\n", exc_ctx_with_reasons[i].GetThreadPtr()->GetIndexID());
-                
-                bool stop_on_continue = true; 
-                bool stop_on_error = true; 
-                bool echo_commands = false;
-                bool print_results = true; 
-                GetDebugger().GetCommandInterpreter().HandleCommands (cur_hook_sp->GetCommands(), 
-                                                                      &exc_ctx_with_reasons[i], 
-                                                                      stop_on_continue, 
-                                                                      stop_on_error, 
-                                                                      echo_commands,
-                                                                      print_results,
-                                                                      eLazyBoolNo,
+
+                CommandInterpreterRunOptions options;
+                options.SetStopOnContinue (true);
+                options.SetStopOnError (true);
+                options.SetEchoCommands (false);
+                options.SetPrintResults (true);
+                options.SetAddToHistory (false);
+
+                GetDebugger().GetCommandInterpreter().HandleCommands (cur_hook_sp->GetCommands(),
+                                                                      &exc_ctx_with_reasons[i],
+                                                                      options,
                                                                       result);
 
                 // If the command started the target going again, we should bag out of
@@ -2376,6 +2375,13 @@ Target::Launch (Listener &listener, ProcessLaunchInfo &launch_info)
     // Finalize the file actions, and if none were given, default to opening
     // up a pseudo terminal
     const bool default_to_use_pty = platform_sp ? platform_sp->IsHost() : false;
+    if (log)
+        log->Printf ("Target::%s have platform=%s, platform_sp->IsHost()=%s, default_to_use_pty=%s",
+                     __FUNCTION__,
+                     platform_sp ? "true" : "false",
+                     platform_sp ? (platform_sp->IsHost () ? "true" : "false") : "n/a",
+                     default_to_use_pty ? "true" : "false");
+
     launch_info.FinalizeFileActions (this, default_to_use_pty);
     
     if (state == eStateConnected)
