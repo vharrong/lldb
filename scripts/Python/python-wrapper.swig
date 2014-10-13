@@ -105,7 +105,32 @@ FindSessionDictionary(const char *session_dictionary_name)
 class PyCallable
 {
 public:
-    
+    struct argc {
+        size_t num_args;
+        bool varargs : 1;
+        bool kwargs : 1;
+    };
+
+    argc
+    GetNumArguments ()
+    {
+        if (m_callable && PyFunction_Check(m_callable))
+        {
+            PyCodeObject* code = (PyCodeObject*)PyFunction_GET_CODE(m_callable);
+            if (code)
+            {
+                size_t args = code->co_argcount;
+                bool va=false,kw=false;
+                if ((code->co_flags & 4) == 4)
+                    va = true;
+                if ((code->co_flags & 8) == 8)
+                    kw = true;
+                return {args,va,kw};
+            }
+        }
+        return {SIZE_MAX,false,false};
+    }
+
     operator
     bool ()
     {
@@ -698,6 +723,34 @@ LLDBSwigPython_MightHaveChildrenSynthProviderInstance
     return ret_val;
 }
 
+SWIGEXPORT PyObject*
+LLDBSwigPython_GetValueSynthProviderInstance
+(
+    PyObject *implementor
+)
+{
+    PyObject* ret_val = nullptr;
+
+    static char callee_name[] = "get_value";
+
+    PyObject* py_return = LLDBSwigPython_CallOptionalMember(implementor,callee_name, Py_None);
+
+    if (py_return == Py_None || py_return == nullptr)
+        ret_val = nullptr;
+
+    lldb::SBValue* sbvalue_ptr = NULL;
+    
+    if (SWIG_ConvertPtr(py_return, (void**)&sbvalue_ptr, SWIGTYPE_p_lldb__SBValue, 0) == -1)
+        ret_val = nullptr;
+    else if (sbvalue_ptr == NULL)
+        ret_val = nullptr;
+    else
+        ret_val = py_return;
+
+    Py_XDECREF(py_return);
+    return ret_val;
+}
+
 SWIGEXPORT void*
 LLDBSWIGPython_CastPyObjectToSBValue
 (
@@ -745,13 +798,15 @@ LLDBSwigPythonCallCommand
     const char *session_dictionary_name,
     lldb::DebuggerSP& debugger,
     const char* args,
-    lldb_private::CommandReturnObject& cmd_retobj
+    lldb_private::CommandReturnObject& cmd_retobj,
+    lldb::ExecutionContextRefSP exe_ctx_ref_sp
 )
 {
 
     lldb::SBCommandReturnObject cmd_retobj_sb(&cmd_retobj);
     SBCommandReturnObjectReleaser cmd_retobj_sb_releaser(cmd_retobj_sb);
     lldb::SBDebugger debugger_sb(debugger);
+    lldb::SBExecutionContext exe_ctx_sb(exe_ctx_ref_sp);
 
     bool retval = false;
 
@@ -766,7 +821,12 @@ LLDBSwigPythonCallCommand
         // pass the pointer-to cmd_retobj_sb or watch the underlying object disappear from under you
         // see comment above for SBCommandReturnObjectReleaser for further details
         PyObject* pvalue = NULL;
-        pvalue = pfunc(debugger_sb, args, &cmd_retobj_sb, session_dict = FindSessionDictionary(session_dictionary_name));
+
+        PyCallable::argc argc = pfunc.GetNumArguments();
+        if (argc.num_args == 5 || argc.varargs == true)
+            pvalue = pfunc(debugger_sb, args, exe_ctx_sb, &cmd_retobj_sb, session_dict = FindSessionDictionary(session_dictionary_name));
+        else
+            pvalue = pfunc(debugger_sb, args, &cmd_retobj_sb, session_dict = FindSessionDictionary(session_dictionary_name));
         
         Py_XINCREF (session_dict);
         Py_XDECREF (pvalue);

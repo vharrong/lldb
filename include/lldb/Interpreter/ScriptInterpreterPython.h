@@ -141,12 +141,16 @@ public:
     virtual bool
     MightHaveChildrenSynthProviderInstance (const lldb::ScriptInterpreterObjectSP& implementor);
     
+    virtual lldb::ValueObjectSP
+    GetSyntheticValue (const lldb::ScriptInterpreterObjectSP& implementor);
+    
     virtual bool
     RunScriptBasedCommand(const char* impl_function,
                           const char* args,
                           ScriptedCommandSynchronicity synchronicity,
                           lldb_private::CommandReturnObject& cmd_retobj,
-                          Error& error);
+                          Error& error,
+                          const lldb_private::ExecutionContext& exe_ctx);
     
     Error
     GenerateFunction(const char *signature, const StringList &input);
@@ -284,6 +288,7 @@ public:
                            SWIGPythonGetValueObjectSPFromSBValue swig_get_valobj_sp_from_sbvalue,
                            SWIGPythonUpdateSynthProviderInstance swig_update_provider,
                            SWIGPythonMightHaveChildrenSynthProviderInstance swig_mighthavechildren_provider,
+                           SWIGPythonGetValueSynthProviderInstance swig_getvalue_provider,
                            SWIGPythonCallCommand swig_call_command,
                            SWIGPythonCallModuleInit swig_call_module_init,
                            SWIGPythonCreateOSPlugin swig_create_os_plugin,
