@@ -17,19 +17,11 @@ namespace lldb_private
 typedef HostThreadWindows HostNativeThread;
 }
 #elif defined(__linux__)
-#if defined(__ANDROID_NDK__)
-#include "lldb/Host/android/HostThreadAndroid.h"
-namespace lldb_private
-{
-typedef HostThreadAndroid HostNativeThread;
-}
-#else
 #include "lldb/Host/linux/HostThreadLinux.h"
 namespace lldb_private
 {
 typedef HostThreadLinux HostNativeThread;
 }
-#endif // __ANDROID_NDK__
 #elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
 #include "lldb/Host/freebsd/HostThreadFreeBSD.h"
 namespace lldb_private

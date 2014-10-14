@@ -150,6 +150,19 @@ GetLinuxProcessUserAndGroup (lldb::pid_t pid, ProcessInstanceInfo &process_info,
     process_info.SetEffectiveGroupID (eGid);
 }
 
+#ifdef __ANDROID_NDK__
+namespace std
+{
+	template <typename T>
+	std::string to_string(T value)
+	{
+		std::ostringstream os ;
+		os << value ;
+		return os.str() ;
+	}
+}
+#endif
+
 lldb::DataBufferSP
 Host::GetAuxvData(lldb_private::Process *process)
 {

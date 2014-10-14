@@ -56,7 +56,6 @@ set( LLDB_USED_LIBS
   lldbPluginPlatformFreeBSD
   lldbPluginPlatformKalimba
   lldbPluginPlatformLinux
-  lldbPluginPlatformAndroid
   lldbPluginPlatformPOSIX
   lldbPluginPlatformWindows
   lldbPluginObjectFileMachO
@@ -100,21 +99,12 @@ endif ()
 
 # Linux-only libraries
 if ( CMAKE_SYSTEM_NAME MATCHES "Linux" )
-  if (__ANDROID_NDK__)
-    list(APPEND LLDB_USED_LIBS
-      lldbPluginProcessAndroid
-      lldbPluginProcessPOSIX
-      lldbPluginProcessElfCore
-      lldbPluginJITLoaderGDB
-     )
-  else()
-    list(APPEND LLDB_USED_LIBS
-      lldbPluginProcessLinux
-      lldbPluginProcessPOSIX
-      lldbPluginProcessElfCore
-      lldbPluginJITLoaderGDB
-     )       
-  endif()
+  list(APPEND LLDB_USED_LIBS
+    lldbPluginProcessLinux
+    lldbPluginProcessPOSIX
+    lldbPluginProcessElfCore
+    lldbPluginJITLoaderGDB
+   )       
 endif ()
 
 # FreeBSD-only libraries
