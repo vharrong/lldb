@@ -11,7 +11,7 @@ import select
 import sys
 import subprocess
 
-_COMMON_SYNC_OPTS = "-avzh --delete"
+_COMMON_SYNC_OPTS = "-avzhe ssh --delete"
 _COMMON_EXCLUDE_OPTS = "--exclude=DerivedData --exclude=.svn --exclude=.git --exclude=llvm-build/Release+Asserts"
 
 def normalize_configuration(config_text):
@@ -27,33 +27,29 @@ def normalize_configuration(config_text):
 def parse_args():
     DEFAULT_REMOTE_ROOT_DIR = "/mnt/ssd/work/macosx.sync"
     DEFAULT_REMOTE_HOSTNAME = "tfiala2.mtv.corp.google.com"
-    OPTIONS_FILENAME = ".remote-build.conf"
-    DEFAULT_SSH_PORT = "22"
+    OPTIONS_FILENAME = '.remote-build.conf'
 
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
 
+    parser.add_argument(
+        "--ccache",
+        action="store_true",
+        dest="use_ccache",
+        help="use ccache in the remote build")
     parser.add_argument(
         "--configuration", "-c",
         help="specify configuration (Debug, Release)",
         default=normalize_configuration(os.environ.get('CONFIGURATION', 'Debug')))
     parser.add_argument(
-        "--debug", "-d",
-        action="store_true",
-        help="help debug the remote-build script by adding extra logging")
-    parser.add_argument(
         "--local-lldb-dir", "-l", metavar="DIR",
         help="specify local lldb directory (Xcode layout assumed for llvm/clang)",
         default=os.getcwd())
-    parser.add_argument(
-        "--port", "-p",
-        help="specify the port ssh should use to connect to the remote side",
-        default=DEFAULT_SSH_PORT)
     parser.add_argument(
         "--remote-address", "-r", metavar="REMOTE-ADDR",
         help="specify the dns name or ip address of the remote linux system",
         default=DEFAULT_REMOTE_HOSTNAME)
     parser.add_argument(
-        "--remote-dir", metavar="DIR",
+        "--remote-dir", "-d", metavar="DIR",
         help="specify the root of the linux source/build dir",
         default=DEFAULT_REMOTE_ROOT_DIR)
     parser.add_argument(
@@ -73,12 +69,10 @@ def parse_args():
 def maybe_create_remote_root_dir(args):
     commandline = [
         "ssh",
-        "-p", args.port,
         "%s@%s" % (args.user, args.remote_address),
         "mkdir",
         "-p",
         args.remote_dir]
-    print("create remote root dir command:\n{}".format(commandline))
     return subprocess.call(commandline)
 
 
@@ -119,79 +113,48 @@ def init_with_args(args):
     return True
 
 def sync_llvm(args):
-    commandline = ["rsync"]
+    commandline = ['rsync']
     commandline.extend(_COMMON_SYNC_OPTS.split())
     commandline.extend(_COMMON_EXCLUDE_OPTS.split())
     commandline.append("--exclude=/llvm/tools/lldb")
-    commandline.extend(["-e", "ssh -p {}".format(args.port)])
     commandline.extend([
         "%s/llvm" % args.local_lldb_dir,
         "%s@%s:%s" % (args.user, args.remote_address, args.remote_dir)])
-    if args.debug:
-        print("going to execute llvm sync: {}".format(commandline))
     return subprocess.call(commandline)
 
 
 def sync_lldb(args):
-    commandline = ["rsync"]
+    commandline = ['rsync']
     commandline.extend(_COMMON_SYNC_OPTS.split())
     commandline.extend(_COMMON_EXCLUDE_OPTS.split())
-    commandline.append("--exclude=/lldb/llvm")
-    commandline.extend(["-e", "ssh -p {}".format(args.port)])
     commandline.extend([
+        "--exclude=/lldb/llvm",
         args.local_lldb_dir,
         "%s@%s:%s/llvm/tools" % (args.user, args.remote_address, args.remote_dir)])
-    if args.debug:
-        print("going to execute lldb sync: {}".format(commandline))
     return subprocess.call(commandline)
-
-
-def build_cmake_command(args):
-    # args.remote_build_dir
-    # args.configuration in ('release', 'debug')
-
-    if args.configuration == 'debug-optimized':
-        build_type_name = "RelWithDebInfo"
-    elif args.configuration == 'release':
-        build_type_name = "Release"
-    else:
-        build_type_name = "Debug"
-
-    ld_flags = "\"-lstdc++ -lm\""
-
-    install_dir = os.path.join(
-        args.remote_build_dir, "..", "install-{}".format(args.configuration))
-
-    command_line = [
-        "cmake",
-        "-GNinja",
-        "-DCMAKE_CXX_COMPILER=clang",
-        "-DCMAKE_C_COMPILER=clang",
-        # "-DCMAKE_CXX_FLAGS=%s" % cxx_flags,
-        "-DCMAKE_SHARED_LINKER_FLAGS=%s" % ld_flags,
-        "-DCMAKE_EXE_LINKER_FLAGS=%s" % ld_flags,
-        "-DCMAKE_INSTALL_PREFIX:PATH=%s" % install_dir,
-        "-DCMAKE_BUILD_TYPE=%s" % build_type_name,
-        "-Wno-dev",
-        os.path.join("..", "llvm")
-        ]
-
-    return command_line
 
 
 def maybe_configure(args):
     commandline = [
         "ssh",
-        "-p", args.port,
         "%s@%s" % (args.user, args.remote_address),
         "cd", args.remote_dir, "&&",
-        "mkdir", "-p", args.remote_build_dir, "&&",
-        "cd", args.remote_build_dir, "&&"
+        "touch", "llvm/.git", "&&",
+        os.path.join(".", "llvm","tools","lldb","scripts","Python","lldb_configure.py"),
+        "-a", # enable assertions
+        "-b", args.remote_build_dir, # use this build dir
+        "-c", # use cmake
+        "-g", # use gold linker
+        "-l", # use clang
+        "-n", # use ninja
+        "-s", # generate debug symbols
         ]
-    commandline.extend(build_cmake_command(args))
 
-    if args.debug:
-        print("configure command: {}".format(commandline))
+    if args.use_ccache:
+        commandline.append("--ccache")
+
+    if args.configuration == 'release':
+        commandline.append('--release')
 
     return subprocess.call(commandline)
 
@@ -209,14 +172,9 @@ def filter_build_line(args, line):
 
 def run_remote_build_command(args, build_command_list):
     commandline = [
-        "ssh",
-        "-p", args.port,
-        "%s@%s" % (args.user, args.remote_address),
+        "ssh", "%s@%s" % (args.user, args.remote_address),
         "cd", args.remote_build_dir, "&&"]
     commandline.extend(build_command_list)
-
-    if args.debug:
-        print("running remote build command: {}".format(commandline))
 
     proc = subprocess.Popen(
         commandline,
@@ -233,14 +191,10 @@ def run_remote_build_command(args, build_command_list):
         for fd in select_result[0]:
             if fd == proc.stdout.fileno():
                 line = proc.stdout.readline()
-                display_line = filter_build_line(args, line.rstrip())
-                if display_line and len(display_line) > 0:
-                    print(display_line)
+                print(filter_build_line(args, line.rstrip()))
             elif fd == proc.stderr.fileno():
                 line = proc.stderr.readline()
-                display_line = filter_build_line(args, line.rstrip())
-                if display_line and len(display_line) > 0:
-                    print(display_line, file=sys.stderr)
+                print(filter_build_line(args, line.rstrip()), file=sys.stderr)
 
         proc_retval = proc.poll()
         if proc_retval != None:
@@ -250,9 +204,7 @@ def run_remote_build_command(args, build_command_list):
             while True:
                 line = proc.stdout.readline()
                 if line:
-                    display_line = filter_build_line(args, line.rstrip())
-                    if display_line and len(display_line) > 0:
-                        print(display_line)
+                    print(filter_build_line(args, line.rstrip()))
                 else:
                     break
 
@@ -260,9 +212,7 @@ def run_remote_build_command(args, build_command_list):
             while True:
                 line = proc.stderr.readline()
                 if line:
-                    display_line = filter_build_line(args, line.rstrip())
-                    if display_line and len(display_line) > 0:
-                        print(display_line, file=sys.stderr)
+                    print(filter_build_line(args, line.rstrip()), file=sys.stderr)
                 else:
                     break
 
