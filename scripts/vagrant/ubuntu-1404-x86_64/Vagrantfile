@@ -1,0 +1,39 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
+VAGRANTFILE_API_VERSION = "2"
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  # This Vagrant box supports most hypervisor environments.
+  config.vm.box = "box-cutter/ubuntu1404-desktop"
+
+  guest_memory_mb  = ENV["LLDB_GUEST_MEMORY_MB"] || 12 * 1024
+  guest_core_count = ENV["LLDB_GUEST_CORE_COUNT"] || 6 
+
+  #
+  # Provider (hypervisor)-specific configuration.
+  #
+  
+  # VMWare Fusion configuration.
+  config.vm.provider "vmware_fusion" do |v|
+    # We want 8 GB RAM, 4 CPUs.
+    # You may need to shrink this if your host has fewer resources.
+    v.vmx["memsize"] = "#{guest_memory_mb}"
+    v.vmx["numvcpus"] = "#{guest_core_count}"
+  end
+  
+  # VirtualBox configuration.
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = guest_memory_mb
+    vb.cpus   = guest_core_count
+  end
+  
+  # Create a forwarded port mapping which allows access the guest with
+  # a local port.
+  local_guest_port = ENV["LLDB_PORT_UBUNTU1404_X86_64"] || 2022
+  config.vm.network "forwarded_port", guest: 22, host: local_guest_port
+
+  # Configure the box with our bootstrap.sh file.
+  config.vm.provision :shell, path: "bootstrap.sh"
+end

@@ -1,0 +1,76 @@
+LLDB supports building some configurations through a Vagrant VM setup.
+With this setup, you can try building other OS combinations with
+top-of-tree lldb or with patches that you want to verify.
+
+This document describes how to use Vagrant to create and test
+lldb with different OSes and architectures as supported by your
+underlying hypervisor.
+
+INSTALLATION
+
+* Install a hypervisor if you do not already have one.
+
+  * VirtualBox
+
+  You can download and install VirtualBox for free from this link:
+
+  https://www.virtualbox.org/wiki/Downloads
+
+  VirtualBox provider support in Vagrant is free.
+
+  * VMWare Fusion and VMWare Workstation
+
+  If you are looking for more performance, you can use VMWare Fusion
+  (MacOSX) or VMWare Desktop (Linux, Windows). VMWare's provider
+  support in Vagrant requires a paid-for license in addition to VMWare
+  itself generally requiring a paid-for license. The benefit is the
+  runtime tends to be more stable, faster, and doesn't generate some
+  debugger- related test failures.
+
+  * Parallels
+
+  Another option is Parallels on MacOSX. There is a Parallels provider
+  plug-in for Vagrant.
+
+* Install Vagrant.
+
+  Follow the directions at the following link to install for your
+  host OS:
+
+  https://www.vagrantup.com/downloads
+
+
+
+
+CURRENT STATE
+
+This setup has been tested with the following configurations:
+
+* Host: MacOSX 10.10 GM Candidate 3, VMWare Fusion 7.0
+        running on a mid-2012 MacBook Pro, 4-core, 16 GB RAM.
+
+  Guest: Ubuntu 14.04 x86_64, 6-core, 12 GB.
+  Build time: real    24m50.664s
+  Test failures:
+
+Ran 313 tests.
+Failing Tests (10)
+FAIL: LLDB (suite) :: TestGdbRemoteProcessInfo.py (Linux vagrant 3.13.0-32-generic #57-Ubuntu SMP Tue Jul 15 03:51:08 UTC 2014 x86_64 x86_64)
+FAIL: LLDB (suite) :: TestGdbRemoteAttach.py (Linux vagrant 3.13.0-32-generic #57-Ubuntu SMP Tue Jul 15 03:51:08 UTC 2014 x86_64 x86_64)
+FAIL: LLDB (suite) :: TestLldbGdbServer.py (Linux vagrant 3.13.0-32-generic #57-Ubuntu SMP Tue Jul 15 03:51:08 UTC 2014 x86_64 x86_64)
+FAIL: LLDB (suite) :: TestGdbRemoteKill.py (Linux vagrant 3.13.0-32-generic #57-Ubuntu SMP Tue Jul 15 03:51:08 UTC 2014 x86_64 x86_64)
+FAIL: LLDB (suite) :: TestDataFormatterStdVector.py (Linux vagrant 3.13.0-32-generic #57-Ubuntu SMP Tue Jul 15 03:51:08 UTC 2014 x86_64 x86_64)
+FAIL: LLDB (suite) :: TestDataFormatterStdVBool.py (Linux vagrant 3.13.0-32-generic #57-Ubuntu SMP Tue Jul 15 03:51:08 UTC 2014 x86_64 x86_64)
+FAIL: LLDB (suite) :: TestDataFormatterStdMap.py (Linux vagrant 3.13.0-32-generic #57-Ubuntu SMP Tue Jul 15 03:51:08 UTC 2014 x86_64 x86_64)
+FAIL: LLDB (suite) :: TestDataFormatterSynthVal.py (Linux vagrant 3.13.0-32-generic #57-Ubuntu SMP Tue Jul 15 03:51:08 UTC 2014 x86_64 x86_64)
+FAIL: LLDB (suite) :: TestReportData.py (Linux vagrant 3.13.0-32-generic #57-Ubuntu SMP Tue Jul 15 03:51:08 UTC 2014 x86_64 x86_64)
+FAIL: LLDB (suite) :: TestMemoryHistory.py (Linux vagrant 3.13.0-32-generic #57-Ubuntu SMP Tue Jul 15 03:51:08 UTC 2014 x86_64 x86_64)
+
+test time: real    2m58.866s
+
+
+* Host: MacOSX 10.10 GM Candidate 3, VirtualBox 4.3.18
+        running on a mid-2012 MacBook Pro, 4-core, 16 GB RAM.
+
+  Guest: Ubuntu 14.04 x86_64, 6-core, 12 GB.
+  Build time:
