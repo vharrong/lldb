@@ -2535,10 +2535,10 @@ Process::WriteMemory (addr_t addr, const void *buf, size_t size, Error &error)
             });
             
             if (bytes_written < size)
-                bytes_written += WriteMemoryPrivate (addr + bytes_written,
-                                                     ubuf + bytes_written,
-                                                     size - bytes_written,
-                                                     error);
+                WriteMemoryPrivate (addr + bytes_written,
+                                    ubuf + bytes_written,
+                                    size - bytes_written,
+                                    error);
         }
     }
     else
@@ -4975,7 +4975,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
     }
 
     HostThread backup_private_state_thread;
-    lldb::StateType old_state;
+    lldb::StateType old_state = eStateInvalid;
     lldb::ThreadPlanSP stopper_base_plan_sp;
     
     Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP | LIBLLDB_LOG_PROCESS));
@@ -5593,8 +5593,8 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
             {
                 thread->DiscardThreadPlansUpToPlan(stopper_base_plan_sp);
             }
-            m_public_state.SetValueNoLock(old_state);
-
+            if (old_state != eStateInvalid)
+                m_public_state.SetValueNoLock(old_state);
         }
 
         // Restore the thread state if we are going to discard the plan execution.  There are three cases where this
