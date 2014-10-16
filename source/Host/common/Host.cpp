@@ -14,22 +14,13 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <sys/types.h>
-#ifdef _WIN32
-#include "lldb/Host/windows/windows.h"
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
+#ifndef _WIN32
 #include <unistd.h>
 #include <dlfcn.h>
 #include <grp.h>
 #include <netdb.h>
 #include <pwd.h>
 #include <sys/stat.h>
-#endif
-
-#if !defined (__GNU__) && !defined (_WIN32)
-// Does not exist under GNU/HURD or Windows
-#include <sys/sysctl.h>
 #endif
 
 #if defined (__APPLE__)
@@ -39,7 +30,9 @@
 #endif
 
 #if defined (__linux__) || defined (__FreeBSD__) || defined (__FreeBSD_kernel__) || defined (__APPLE__) || defined(__NetBSD__)
+#ifndef __ANDROID__
 #include <spawn.h>
+#endif
 #include <sys/wait.h>
 #include <sys/syscall.h>
 #endif
@@ -48,41 +41,32 @@
 #include <pthread_np.h>
 #endif
 
-#if defined(__linux__)
-#include "Plugins/Process/Linux/ProcFileReader.h"
-#endif
-
 // C++ includes
 #include <limits>
 
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Core/ArchSpec.h"
-#include "lldb/Core/ConstString.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
-#include "lldb/Core/StreamString.h"
-#include "lldb/Core/ThreadSafeSTLMap.h"
-#include "lldb/Host/Config.h"
-#include "lldb/Host/Endian.h"
 #include "lldb/Host/FileSpec.h"
-#include "lldb/Host/FileSystem.h"
-#include "lldb/Host/Mutex.h"
+#include "lldb/Host/HostProcess.h"
+#include "lldb/Host/MonitoringProcessLauncher.h"
+#include "lldb/Host/ProcessLauncher.h"
 #include "lldb/Host/ThreadLauncher.h"
 #include "lldb/lldb-private-forward.h"
 #include "lldb/Target/FileAction.h"
-#include "lldb/Target/Process.h"
 #include "lldb/Target/ProcessLaunchInfo.h"
 #include "lldb/Target/TargetList.h"
 #include "lldb/Utility/CleanUp.h"
 
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/Support/Host.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/raw_ostream.h"
+#if defined(_WIN32)
+#include "lldb/Host/windows/ProcessLauncherWindows.h"
+#else
+#include "lldb/Host/posix/ProcessLauncherPosix.h"
+#endif
 
 #if defined (__APPLE__)
 #ifndef _POSIX_SPAWN_DISABLE_ASLR
@@ -127,6 +111,7 @@ Host::StartMonitoringChildProcess(Host::MonitorChildProcessCallback callback, vo
     return ThreadLauncher::LaunchThread(thread_name, MonitorChildProcessThreadFunction, info_ptr, NULL);
 }
 
+#ifndef __ANDROID__
 //------------------------------------------------------------------
 // Scoped class that will disable thread canceling when it is
 // constructed, and exception safely restore the previous value it
@@ -154,6 +139,7 @@ public:
 private:
     int m_old_state;    // Save the old cancelability state.
 };
+#endif
 
 static thread_result_t
 MonitorChildProcessThreadFunction (void *arg)
@@ -187,10 +173,14 @@ MonitorChildProcessThreadFunction (void *arg)
             log->Printf("%s ::wait_pid (pid = %" PRIi32 ", &status, options = %i)...", function, pid, options);
 
         // Wait for all child processes
+#ifndef __ANDROID__
         ::pthread_testcancel ();
+#endif
         // Get signals from all children with same process group of pid
         const ::pid_t wait_pid = ::waitpid (pid, &status, options);
+#ifndef __ANDROID__
         ::pthread_testcancel ();
+#endif
 
         if (wait_pid == -1)
         {
@@ -236,7 +226,9 @@ MonitorChildProcessThreadFunction (void *arg)
 
             // Scope for pthread_cancel_disabler
             {
+#ifndef __ANDROID__
                 ScopedPThreadCancelDisabler pthread_cancel_disabler;
+#endif
 
                 log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
                 if (log)
@@ -464,12 +456,16 @@ FileSpec
 Host::GetModuleFileSpecForHostAddress (const void *host_addr)
 {
     FileSpec module_filespec;
+#ifndef __ANDROID__
     Dl_info info;
     if (::dladdr (host_addr, &info))
     {
         if (info.dli_fname)
             module_filespec.SetFile(info.dli_fname, true);
     }
+#else
+    assert(false && "dladdr() not supported on Android");
+#endif
     return module_filespec;
 }
 
@@ -703,8 +699,9 @@ Host::RunShellCommand (const char *command,
 // common/Host.cpp.
 
 short
-Host::GetPosixspawnFlags (ProcessLaunchInfo &launch_info)
+Host::GetPosixspawnFlags(const ProcessLaunchInfo &launch_info)
 {
+#ifndef __ANDROID__
     short flags = POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK;
 
 #if defined (__APPLE__)
@@ -747,12 +744,17 @@ Host::GetPosixspawnFlags (ProcessLaunchInfo &launch_info)
 #endif
 #endif // #if defined (__APPLE__)
     return flags;
+#else
+    assert(false *&& "Host::GetPosixspawnFlags() not supported on Android");
+    return 0;
+#endif
 }
 
 Error
-Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t &pid)
+Host::LaunchProcessPosixSpawn(const char *exe_path, const ProcessLaunchInfo &launch_info, lldb::pid_t &pid)
 {
     Error error;
+#ifndef __ANDROID__
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
 
     posix_spawnattr_t attr;
@@ -870,6 +872,7 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
 #endif
     }
 
+    ::pid_t result_pid = LLDB_INVALID_PROCESS_ID;
     const size_t num_file_actions = launch_info.GetNumFileActions ();
     if (num_file_actions > 0)
     {
@@ -894,21 +897,13 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
             }
         }
 
-        error.SetError (::posix_spawnp (&pid,
-                                        exe_path,
-                                        &file_actions,
-                                        &attr,
-                                        argv,
-                                        envp),
-                        eErrorTypePOSIX);
+        error.SetError(::posix_spawnp(&result_pid, exe_path, &file_actions, &attr, argv, envp), eErrorTypePOSIX);
 
         if (error.Fail() || log)
         {
-            error.PutToLog(log, "::posix_spawnp ( pid => %i, path = '%s', file_actions = %p, attr = %p, argv = %p, envp = %p )",
-                           pid, exe_path, static_cast<void*>(&file_actions),
-                           static_cast<void*>(&attr),
-                           reinterpret_cast<const void*>(argv),
-                           reinterpret_cast<const void*>(envp));
+            error.PutToLog(log, "::posix_spawnp ( pid => %i, path = '%s', file_actions = %p, attr = %p, argv = %p, envp = %p )", result_pid,
+                           exe_path, static_cast<void *>(&file_actions), static_cast<void *>(&attr), reinterpret_cast<const void *>(argv),
+                           reinterpret_cast<const void *>(envp));
             if (log)
             {
                 for (int ii=0; argv[ii]; ++ii)
@@ -919,20 +914,13 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
     }
     else
     {
-        error.SetError (::posix_spawnp (&pid,
-                                        exe_path,
-                                        NULL,
-                                        &attr,
-                                        argv,
-                                        envp),
-                        eErrorTypePOSIX);
+        error.SetError(::posix_spawnp(&result_pid, exe_path, NULL, &attr, argv, envp), eErrorTypePOSIX);
 
         if (error.Fail() || log)
         {
             error.PutToLog(log, "::posix_spawnp ( pid => %i, path = '%s', file_actions = NULL, attr = %p, argv = %p, envp = %p )",
-                           pid, exe_path, static_cast<void*>(&attr),
-                           reinterpret_cast<const void*>(argv),
-                           reinterpret_cast<const void*>(envp));
+                           result_pid, exe_path, static_cast<void *>(&attr), reinterpret_cast<const void *>(argv),
+                           reinterpret_cast<const void *>(envp));
             if (log)
             {
                 for (int ii=0; argv[ii]; ++ii)
@@ -940,6 +928,7 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
             }
         }
     }
+    pid = result_pid;
 
     if (working_dir)
     {
@@ -955,6 +944,9 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
         }
 #endif
     }
+#else
+    error.SetErrorString("Host::LaunchProcessPosixSpawn() not supported on Android");
+#endif
 
     return error;
 }
@@ -962,6 +954,7 @@ Host::LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_i
 bool
 Host::AddPosixSpawnFileAction(void *_file_actions, const FileAction *info, Log *log, Error &error)
 {
+#ifndef __ANDROID__
     if (info == NULL)
         return false;
 
@@ -1024,90 +1017,36 @@ Host::AddPosixSpawnFileAction(void *_file_actions, const FileAction *info, Log *
             break;
     }
     return error.Success();
+#else
+    error.SetErrorString("Host::AddPosixSpawnFileAction() not supported on Android");
+    return false;
+#endif
 }
 
 #endif // LaunchProcedssPosixSpawn: Apple, Linux, FreeBSD and other GLIBC systems
 
-
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__GLIBC__) || defined(__NetBSD__)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__GLIBC__) || defined(__NetBSD__) || defined(_WIN32)
 // The functions below implement process launching via posix_spawn() for Linux,
 // FreeBSD and NetBSD.
 
 Error
 Host::LaunchProcess (ProcessLaunchInfo &launch_info)
 {
+    std::unique_ptr<ProcessLauncher> delegate_launcher;
+#if defined(_WIN32)
+    delegate_launcher.reset(new ProcessLauncherWindows());
+#else
+    delegate_launcher.reset(new ProcessLauncherPosix());
+#endif
+    MonitoringProcessLauncher launcher(std::move(delegate_launcher));
+
     Error error;
-    char exe_path[PATH_MAX];
+    HostProcess process = launcher.LaunchProcess(launch_info, error);
 
-    PlatformSP host_platform_sp (Platform::GetHostPlatform ());
+    // TODO(zturner): It would be better if the entire HostProcess were returned instead of writing
+    // it into this structure.
+    launch_info.SetProcessID(process.GetProcessId());
 
-    const ArchSpec &arch_spec = launch_info.GetArchitecture();
-
-    FileSpec exe_spec(launch_info.GetExecutableFile());
-
-    FileSpec::FileType file_type = exe_spec.GetFileType();
-    if (file_type != FileSpec::eFileTypeRegular)
-    {
-        lldb::ModuleSP exe_module_sp;
-        error = host_platform_sp->ResolveExecutable (exe_spec,
-                                                     arch_spec,
-                                                     exe_module_sp,
-                                                     NULL);
-
-        if (error.Fail())
-            return error;
-
-        if (exe_module_sp)
-            exe_spec = exe_module_sp->GetFileSpec();
-    }
-
-    if (exe_spec.Exists())
-    {
-        exe_spec.GetPath (exe_path, sizeof(exe_path));
-    }
-    else
-    {
-        launch_info.GetExecutableFile().GetPath (exe_path, sizeof(exe_path));
-        error.SetErrorStringWithFormat ("executable doesn't exist: '%s'", exe_path);
-        return error;
-    }
-
-    assert(!launch_info.GetFlags().Test (eLaunchFlagLaunchInTTY));
-
-    ::pid_t pid = LLDB_INVALID_PROCESS_ID;
-
-    error = LaunchProcessPosixSpawn(exe_path, launch_info, pid);
-
-    if (pid != LLDB_INVALID_PROCESS_ID)
-    {
-        // If all went well, then set the process ID into the launch info
-        launch_info.SetProcessID(pid);
-
-        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
-
-        // Make sure we reap any processes we spawn or we will have zombies.
-        if (!launch_info.MonitorProcess())
-        {
-            const bool monitor_signals = false;
-            StartMonitoringChildProcess (Process::SetProcessExitStatus,
-                                         NULL,
-                                         pid,
-                                         monitor_signals);
-            if (log)
-                log->PutCString ("monitored child process with default Process::SetProcessExitStatus.");
-        }
-        else
-        {
-            if (log)
-                log->PutCString ("monitored child process with user-specified process monitor.");
-        }
-    }
-    else
-    {
-        // Invalid process ID, something didn't go well
-        if (error.Success())
-            error.SetErrorString ("process launch failed for unknown reasons");
-    }
     return error;
 }
 

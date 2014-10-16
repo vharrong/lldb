@@ -2178,18 +2178,17 @@ Target::RunStopHooks ()
                 
                 if (print_thread_header)
                     result.AppendMessageWithFormat("-- Thread %d\n", exc_ctx_with_reasons[i].GetThreadPtr()->GetIndexID());
-                
-                bool stop_on_continue = true; 
-                bool stop_on_error = true; 
-                bool echo_commands = false;
-                bool print_results = true; 
-                GetDebugger().GetCommandInterpreter().HandleCommands (cur_hook_sp->GetCommands(), 
-                                                                      &exc_ctx_with_reasons[i], 
-                                                                      stop_on_continue, 
-                                                                      stop_on_error, 
-                                                                      echo_commands,
-                                                                      print_results,
-                                                                      eLazyBoolNo,
+
+                CommandInterpreterRunOptions options;
+                options.SetStopOnContinue (true);
+                options.SetStopOnError (true);
+                options.SetEchoCommands (false);
+                options.SetPrintResults (true);
+                options.SetAddToHistory (false);
+
+                GetDebugger().GetCommandInterpreter().HandleCommands (cur_hook_sp->GetCommands(),
+                                                                      &exc_ctx_with_reasons[i],
+                                                                      options,
                                                                       result);
 
                 // If the command started the target going again, we should bag out of
@@ -2376,6 +2375,13 @@ Target::Launch (Listener &listener, ProcessLaunchInfo &launch_info)
     // Finalize the file actions, and if none were given, default to opening
     // up a pseudo terminal
     const bool default_to_use_pty = platform_sp ? platform_sp->IsHost() : false;
+    if (log)
+        log->Printf ("Target::%s have platform=%s, platform_sp->IsHost()=%s, default_to_use_pty=%s",
+                     __FUNCTION__,
+                     platform_sp ? "true" : "false",
+                     platform_sp ? (platform_sp->IsHost () ? "true" : "false") : "n/a",
+                     default_to_use_pty ? "true" : "false");
+
     launch_info.FinalizeFileActions (this, default_to_use_pty);
     
     if (state == eStateConnected)
@@ -2680,12 +2686,13 @@ g_properties[] =
     { "detach-on-error"                    , OptionValue::eTypeBoolean   , false, true                      , NULL, NULL, "debugserver will detach (rather than killing) a process if it loses connection with lldb." },
     { "disable-aslr"                       , OptionValue::eTypeBoolean   , false, true                      , NULL, NULL, "Disable Address Space Layout Randomization (ASLR)" },
     { "disable-stdio"                      , OptionValue::eTypeBoolean   , false, false                     , NULL, NULL, "Disable stdin/stdout for process (e.g. for a GUI application)" },
-    { "inline-breakpoint-strategy"         , OptionValue::eTypeEnum      , false, eInlineBreakpointsHeaders , NULL, g_inline_breakpoint_enums, "The strategy to use when settings breakpoints by file and line. "
+    { "inline-breakpoint-strategy"         , OptionValue::eTypeEnum      , false, eInlineBreakpointsAlways  , NULL, g_inline_breakpoint_enums, "The strategy to use when settings breakpoints by file and line. "
         "Breakpoint locations can end up being inlined by the compiler, so that a compile unit 'a.c' might contain an inlined function from another source file. "
         "Usually this is limitted to breakpoint locations from inlined functions from header or other include files, or more accurately non-implementation source files. "
         "Sometimes code might #include implementation files and cause inlined breakpoint locations in inlined implementation files. "
-        "Always checking for inlined breakpoint locations can be expensive (memory and time), so we try to minimize the "
-        "times we look for inlined locations. This setting allows you to control exactly which strategy is used when settings "
+        "Always checking for inlined breakpoint locations can be expensive (memory and time), so if you have a project with many headers "
+        "and find that setting breakpoints is slow, then you can change this setting to headers. "
+        "This setting allows you to control exactly which strategy is used when setting "
         "file and line breakpoints." },
     // FIXME: This is the wrong way to do per-architecture settings, but we don't have a general per architecture settings system in place yet.
     { "x86-disassembly-flavor"             , OptionValue::eTypeEnum      , false, eX86DisFlavorDefault,       NULL, g_x86_dis_flavor_value_types, "The default disassembly flavor to use for x86 or x86-64 targets." },

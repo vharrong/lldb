@@ -250,6 +250,13 @@ public:
                   Stream &s,
                   ValueObject* valobj = NULL);
 
+    static bool
+    FormatDisassemblerAddress (const char *format,
+                               const SymbolContext *sc,
+                               const SymbolContext *prev_sc,
+                               const ExecutionContext *exe_ctx,
+                               const Address *addr,
+                               Stream &s);
 
     void
     ClearIOHandlers ();
@@ -288,10 +295,13 @@ public:
 
     bool
     GetAutoConfirm () const;
-    
+
+    const char *
+    GetDisassemblyFormat() const;
+
     const char *
     GetFrameFormat() const;
-    
+
     const char *
     GetThreadFormat() const;
     
@@ -365,7 +375,7 @@ public:
     bool
     IsHandlingEvents () const
     {
-        return m_event_handler_thread.GetState() == eThreadStateRunning;
+        return m_event_handler_thread.IsJoinable();
     }
 
 protected:

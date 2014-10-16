@@ -19,7 +19,9 @@
 #include <unistd.h>
 #include <linux/unistd.h>
 #include <sys/personality.h>
+#ifndef __ANDROID__
 #include <sys/procfs.h>
+#endif
 #include <sys/ptrace.h>
 #include <sys/uio.h>
 #include <sys/socket.h>
@@ -58,7 +60,12 @@
 #include "Plugins/Process/Utility/LinuxSignals.h"
 #include "NativeThreadLinux.h"
 #include "ProcFileReader.h"
-#include "ProcessPOSIXLog.h"
+#include "Plugins/Process/POSIX/ProcessPOSIXLog.h"
+
+#ifdef __ANDROID__
+#define __ptrace_request int
+#define PT_DETACH PTRACE_DETACH
+#endif
 
 #define DEBUG_PTRACE_MAXBYTES 20
 
@@ -1394,7 +1401,7 @@ WAIT_AGAIN:
     // Finally, start monitoring the child process for change in state.
     m_monitor_thread = Host::StartMonitoringChildProcess(
         NativeProcessLinux::MonitorCallback, this, GetID(), true);
-    if (m_monitor_thread.GetState() != eThreadStateRunning)
+    if (!m_monitor_thread.IsJoinable())
     {
         error.SetErrorToGenericError();
         error.SetErrorString ("Process attach failed to create monitor thread for NativeProcessLinux::MonitorCallback.");
@@ -1472,7 +1479,7 @@ WAIT_AGAIN:
     // Finally, start monitoring the child process for change in state.
     m_monitor_thread = Host::StartMonitoringChildProcess (
         NativeProcessLinux::MonitorCallback, this, GetID (), true);
-    if (m_monitor_thread.GetState() != eThreadStateRunning)
+    if (!m_monitor_thread.IsJoinable())
     {
         error.SetErrorToGenericError ();
         error.SetErrorString ("Process attach failed to create monitor thread for NativeProcessLinux::MonitorCallback.");
@@ -1493,7 +1500,7 @@ NativeProcessLinux::StartLaunchOpThread(LaunchArgs *args, Error &error)
 {
     static const char *g_thread_name = "lldb.process.nativelinux.operation";
 
-    if (m_operation_thread.GetState() == eThreadStateRunning)
+    if (m_operation_thread.IsJoinable())
         return;
 
     m_operation_thread = ThreadLauncher::LaunchThread(g_thread_name, LaunchOpThread, args, &error);
@@ -1536,7 +1543,6 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     NativeThreadProtocolSP thread_sp;
 
     lldb::ThreadSP inferior;
-    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
 
     // Propagate the environment if one is not supplied.
@@ -1547,7 +1553,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     {
         args->m_error.SetErrorToGenericError();
         args->m_error.SetErrorString("Process fork failed.");
-        goto FINISH;
+        return false;
     }
 
     // Recognized child exit status codes.
@@ -1564,48 +1570,21 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     // Child process.
     if (pid == 0)
     {
-        // FIXME log entries here don't log out, at least not to a file-based log.
-        if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process preparing to fork", __FUNCTION__);
+        // FIXME consider opening a pipe between parent/child and have this forked child
+        // send log info to parent re: launch status, in place of the log lines removed here.
 
-        // Trace this process.
-        if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process issuing PTRACE_TRACEME", __FUNCTION__);
-
+        // Start tracing this child that is about to exec.
         if (PTRACE(PTRACE_TRACEME, 0, NULL, NULL, 0) < 0)
-        {
-            if (log)
-                log->Printf ("NativeProcessLinux::%s inferior process PTRACE_TRACEME failed", __FUNCTION__);
             exit(ePtraceFailed);
-        }
 
         // Do not inherit setgid powers.
-        if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process resetting gid", __FUNCTION__);
-
         if (setgid(getgid()) != 0)
-        {
-            if (log)
-                log->Printf ("NativeProcessLinux::%s inferior process setgid() failed", __FUNCTION__);
             exit(eSetGidFailed);
-        }
 
         // Attempt to have our own process group.
-        // TODO verify if we really want this.
-        if (log)
-            log->Printf ("NativeProcessLinux::%s inferior process resetting process group", __FUNCTION__);
-
         if (setpgid(0, 0) != 0)
         {
-            if (log)
-            {
-                const int error_code = errno;
-                log->Printf ("NativeProcessLinux::%s inferior setpgid() failed, errno=%d (%s), continuing with existing process group %" PRIu64,
-                        __FUNCTION__,
-                        error_code,
-                        strerror (error_code),
-                        static_cast<lldb::pid_t> (getpgid (0)));
-            }
+            // FIXME log that this failed. This is common.
             // Don't allow this to prevent an inferior exec.
         }
 
@@ -1633,33 +1612,35 @@ NativeProcessLinux::Launch(LaunchArgs *args)
             const int old_personality = personality (LLDB_PERSONALITY_GET_CURRENT_SETTINGS);
             if (old_personality == -1)
             {
-                if (log)
-                    log->Printf ("NativeProcessLinux::%s retrieval of Linux personality () failed: %s. Cannot disable ASLR.", __FUNCTION__, strerror (errno));
+                // Can't retrieve Linux personality.  Cannot disable ASLR.
             }
             else
             {
                 const int new_personality = personality (ADDR_NO_RANDOMIZE | old_personality);
                 if (new_personality == -1)
                 {
-                    if (log)
-                        log->Printf ("NativeProcessLinux::%s setting of Linux personality () to disable ASLR failed, ignoring: %s", __FUNCTION__, strerror (errno));
-
+                    // Disabling ASLR failed.
                 }
                 else
                 {
-                    if (log)
-                        log->Printf ("NativeProcessLinux::%s disabling ASLR: SUCCESS", __FUNCTION__);
-
+                    // Disabling ASLR succeeded.
                 }
             }
         }
 
-        // Execute.  We should never return.
+        // Execute.  We should never return...
         execve(argv[0],
                const_cast<char *const *>(argv),
                const_cast<char *const *>(envp));
+
+        // ...unless exec fails.  In which case we definitely need to end the child here.
         exit(eExecFailed);
     }
+
+    //
+    // This is the parent code here.
+    //
+    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
 
     // Wait for the child process to trap on its call to execve.
     ::pid_t wpid;
@@ -1675,7 +1656,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
         // FIXME this could really use a new state - eStateLaunchFailure.  For now, using eStateInvalid.
         monitor->SetState (StateType::eStateInvalid);
 
-        goto FINISH;
+        return false;
     }
     else if (WIFEXITED(status))
     {
@@ -1720,7 +1701,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
         // FIXME this could really use a new state - eStateLaunchFailure.  For now, using eStateInvalid.
         monitor->SetState (StateType::eStateInvalid);
 
-        goto FINISH;
+        return false;
     }
     assert(WIFSTOPPED(status) && (wpid == static_cast< ::pid_t> (pid)) &&
            "Could not sync with inferior process.");
@@ -1740,7 +1721,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
         // FIXME this could really use a new state - eStateLaunchFailure.  For now, using eStateInvalid.
         monitor->SetState (StateType::eStateInvalid);
 
-        goto FINISH;
+        return false;
     }
 
     // Release the master terminal descriptor and pass it off to the
@@ -1762,7 +1743,7 @@ NativeProcessLinux::Launch(LaunchArgs *args)
         // FIXME this could really use a new state - eStateLaunchFailure.  For now, using eStateInvalid.
         monitor->SetState (StateType::eStateInvalid);
 
-        goto FINISH;
+        return false;
     }
 
     if (log)
@@ -1776,7 +1757,6 @@ NativeProcessLinux::Launch(LaunchArgs *args)
     // Let our process instance know the thread has stopped.
     monitor->SetState (StateType::eStateStopped);
 
-FINISH:
     if (log)
     {
         if (args->m_error.Success ())
@@ -1798,7 +1778,7 @@ NativeProcessLinux::StartAttachOpThread(AttachArgs *args, lldb_private::Error &e
 {
     static const char *g_thread_name = "lldb.process.linux.operation";
 
-    if (m_operation_thread.GetState() == eThreadStateRunning)
+    if (m_operation_thread.IsJoinable())
         return;
 
     m_operation_thread = ThreadLauncher::LaunchThread(g_thread_name, AttachOpThread, args, &error);
@@ -3634,11 +3614,10 @@ NativeProcessLinux::DupDescriptor(const char *path, int fd, int flags)
 void
 NativeProcessLinux::StopMonitoringChildProcess()
 {
-    if (m_monitor_thread.GetState() == eThreadStateRunning)
+    if (m_monitor_thread.IsJoinable())
     {
         m_monitor_thread.Cancel();
         m_monitor_thread.Join(nullptr);
-        m_monitor_thread.Reset();
     }
 }
 
@@ -3660,12 +3639,11 @@ NativeProcessLinux::StopMonitor()
 void
 NativeProcessLinux::StopOpThread()
 {
-    if (m_operation_thread.GetState() != eThreadStateRunning)
+    if (!m_operation_thread.IsJoinable())
         return;
 
     m_operation_thread.Cancel();
     m_operation_thread.Join(nullptr);
-    m_operation_thread.Reset();
 }
 
 bool

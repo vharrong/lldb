@@ -16,21 +16,21 @@
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Event.h"
-#include "lldb/Core/ConnectionFileDescriptor.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
-#include "lldb/Symbol/Symbol.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Expression/ClangUserExpression.h"
-#include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Host/ConnectionFileDescriptor.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
 #include "lldb/Host/Pipe.h"
 #include "lldb/Host/Terminal.h"
 #include "lldb/Host/ThreadLauncher.h"
+#include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Symbol/Symbol.h"
 #include "lldb/Target/ABI.h"
 #include "lldb/Target/DynamicLoader.h"
 #include "lldb/Target/JITLoader.h"
@@ -48,6 +48,7 @@
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/ThreadPlan.h"
 #include "lldb/Target/ThreadPlanBase.h"
+#include "lldb/Target/InstrumentationRuntime.h"
 #include "Plugins/Process/Utility/InferiorCallPOSIX.h"
 
 using namespace lldb;
@@ -843,6 +844,7 @@ Process::Finalize()
     m_memory_cache.Clear();
     m_allocated_memory_cache.Clear();
     m_language_runtimes.clear();
+    m_instrumentation_runtimes.clear();
     m_next_event_action_ap.reset();
 //#ifdef LLDB_CONFIGURATION_DEBUG
 //    StreamFile s(stdout, false);
@@ -941,7 +943,7 @@ Process::SyncIOHandler (uint64_t timeout_msec)
                 log->Printf ("Process::%s pid %" PRIu64 ": SUCCESS", __FUNCTION__, GetID ());
         }
 
-        // reset sync one-shot so it will be ready for next time
+        // reset sync one-shot so it will be ready for next launch
         m_iohandler_sync.SetValue(false, eBroadcastNever);
     }
 
@@ -2533,10 +2535,10 @@ Process::WriteMemory (addr_t addr, const void *buf, size_t size, Error &error)
             });
             
             if (bytes_written < size)
-                bytes_written += WriteMemoryPrivate (addr + bytes_written,
-                                                     ubuf + bytes_written,
-                                                     size - bytes_written,
-                                                     error);
+                WriteMemoryPrivate (addr + bytes_written,
+                                    ubuf + bytes_written,
+                                    size - bytes_written,
+                                    error);
         }
     }
     else
@@ -2838,9 +2840,12 @@ Process::Launch (ProcessLaunchInfo &launch_info)
                             system_runtime->DidLaunch();
 
                         m_os_ap.reset (OperatingSystem::FindPlugin (this, NULL));
-                        // This delays passing the stopped event to listeners till DidLaunch gets
-                        // a chance to complete...
-                        HandlePrivateEvent (event_sp);
+
+                        // Note, the stop event was consumed above, but not handled. This was done
+                        // to give DidLaunch a chance to run. The target is either stopped or crashed.
+                        // Directly set the state.  This is done to prevent a stop message with a bunch
+                        // of spurious output on thread status, as well as not pop a ProcessIOHandler.
+                        SetPublicState(state, false);
 
                         if (PrivateStateThreadIsValid ())
                             ResumePrivateStateThread ();
@@ -3867,7 +3872,7 @@ Process::StartPrivateStateThread (bool force)
 
     // Create the private state thread, and start it running.
     m_private_state_thread = ThreadLauncher::LaunchThread(thread_name, Process::PrivateStateThread, this, NULL);
-    if (m_private_state_thread.GetState() == eThreadStateRunning)
+    if (m_private_state_thread.IsJoinable())
     {
         ResumePrivateStateThread();
         return true;
@@ -3917,7 +3922,7 @@ Process::ControlPrivateStateThread (uint32_t signal)
     // thread starts exiting since the private state thread will NULL this out
     // when it exits
     HostThread private_state_thread(m_private_state_thread);
-    if (private_state_thread.GetState() == eThreadStateRunning)
+    if (private_state_thread.IsJoinable())
     {
         TimeValue timeout_time;
         bool timed_out;
@@ -4029,7 +4034,8 @@ Process::HandlePrivateEvent (EventSP &event_sp)
         {
             // Only push the input handler if we aren't fowarding events,
             // as this means the curses GUI is in use...
-            if (!GetTarget().GetDebugger().IsForwardingEvents())
+            // Or don't push it if we are launching since it will come up stopped.
+            if (!GetTarget().GetDebugger().IsForwardingEvents() && new_state != eStateLaunching)
                 PushProcessIOHandler ();
             m_iohandler_sync.SetValue(true, eBroadcastAlways);
         }
@@ -4969,7 +4975,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
     }
 
     HostThread backup_private_state_thread;
-    lldb::StateType old_state;
+    lldb::StateType old_state = eStateInvalid;
     lldb::ThreadPlanSP stopper_base_plan_sp;
     
     Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP | LIBLLDB_LOG_PROCESS));
@@ -5578,7 +5584,7 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
         }  // END WAIT LOOP
 
         // If we had to start up a temporary private state thread to run this thread plan, shut it down now.
-        if (backup_private_state_thread.GetState() != eThreadStateInvalid)
+        if (backup_private_state_thread.IsJoinable())
         {
             StopPrivateStateThread();
             Error error;
@@ -5587,8 +5593,8 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
             {
                 thread->DiscardThreadPlansUpToPlan(stopper_base_plan_sp);
             }
-            m_public_state.SetValueNoLock(old_state);
-
+            if (old_state != eStateInvalid)
+                m_public_state.SetValueNoLock(old_state);
         }
 
         // Restore the thread state if we are going to discard the plan execution.  There are three cases where this
@@ -5979,6 +5985,7 @@ Process::DidExec ()
     m_image_tokens.clear();
     m_allocated_memory_cache.Clear();
     m_language_runtimes.clear();
+    m_instrumentation_runtimes.clear();
     m_thread_list.DiscardThreadPlans();
     m_memory_cache.Clear(true);
     DoDidExec();
@@ -6029,13 +6036,24 @@ Process::ResolveIndirectFunction(const Address *address, Error &error)
 void
 Process::ModulesDidLoad (ModuleList &module_list)
 {
-  SystemRuntime *sys_runtime = GetSystemRuntime();
-  if (sys_runtime)
-  {
-    sys_runtime->ModulesDidLoad (module_list);
-  }
+    SystemRuntime *sys_runtime = GetSystemRuntime();
+    if (sys_runtime)
+    {
+        sys_runtime->ModulesDidLoad (module_list);
+    }
 
-  GetJITLoaders().ModulesDidLoad (module_list);
+    GetJITLoaders().ModulesDidLoad (module_list);
+    
+    // Give runtimes a chance to be created.
+    InstrumentationRuntime::ModulesDidLoad(module_list, this, m_instrumentation_runtimes);
+    
+    // Tell runtimes about new modules.
+    for (auto pos = m_instrumentation_runtimes.begin(); pos != m_instrumentation_runtimes.end(); ++pos)
+    {
+        InstrumentationRuntimeSP runtime = pos->second;
+        runtime->ModulesDidLoad(module_list);
+    }
+
 }
 
 ThreadCollectionSP
@@ -6052,4 +6070,17 @@ Process::GetHistoryThreads(lldb::addr_t addr)
     threads.reset(new ThreadCollection(memory_history->GetHistoryThreads(addr)));
     
     return threads;
+}
+
+InstrumentationRuntimeSP
+Process::GetInstrumentationRuntime(lldb::InstrumentationRuntimeType type)
+{
+    InstrumentationRuntimeCollection::iterator pos;
+    pos = m_instrumentation_runtimes.find (type);
+    if (pos == m_instrumentation_runtimes.end())
+    {
+        return InstrumentationRuntimeSP();
+    }
+    else
+        return (*pos).second;
 }

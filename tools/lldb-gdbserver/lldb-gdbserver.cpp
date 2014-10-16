@@ -7,8 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "lldb/lldb-python.h"
-
 // C Includes
 #include <errno.h>
 #include <getopt.h>
@@ -27,11 +25,11 @@
 // Other libraries and framework includes
 #include "lldb/lldb-private-log.h"
 #include "lldb/Core/Error.h"
-#include "lldb/Core/ConnectionFileDescriptor.h"
 #include "lldb/Core/ConnectionMachPort.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/StreamFile.h"
+#include "lldb/Host/ConnectionFileDescriptor.h"
 #include "lldb/Host/HostThread.h"
 #include "lldb/Host/OptionParser.h"
 #include "lldb/Host/Socket.h"
@@ -281,7 +279,7 @@ static Error
 StartListenThread (const char *hostname, uint16_t port)
 {
     Error error;
-    if (s_listen_thread.GetState() == eThreadStateRunning)
+    if (s_listen_thread.IsJoinable())
     {
         error.SetErrorString("listen thread already running");
     }
@@ -303,11 +301,8 @@ StartListenThread (const char *hostname, uint16_t port)
 static bool
 JoinListenThread ()
 {
-    if (s_listen_thread.GetState() == eThreadStateRunning)
-    {
+    if (s_listen_thread.IsJoinable())
         s_listen_thread.Join(nullptr);
-        s_listen_thread.Reset();
-    }
     return true;
 }
 

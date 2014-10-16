@@ -85,6 +85,7 @@ set( LLDB_USED_LIBS
   lldbPluginObjectFilePECOFF
   lldbPluginOSPython
   lldbPluginMemoryHistoryASan
+  lldbPluginInstrumentationRuntimeAddressSanitizer
   )
 
 # Need to export the API in the liblldb.dll for Windows
@@ -233,6 +234,7 @@ add_lldb_library(liblldb
   API/SBDeclaration.cpp
   API/SBError.cpp
   API/SBEvent.cpp
+  API/SBExecutionContext.cpp
   API/SBExpressionOptions.cpp
   API/SBFileSpec.cpp
   API/SBFileSpecList.cpp
@@ -258,6 +260,7 @@ add_lldb_library(liblldb
   API/SBSymbolContextList.cpp
   API/SBTarget.cpp
   API/SBThread.cpp
+  API/SBThreadPlan.cpp
   API/SBThreadCollection.cpp
   API/SBType.cpp
   API/SBTypeCategory.cpp

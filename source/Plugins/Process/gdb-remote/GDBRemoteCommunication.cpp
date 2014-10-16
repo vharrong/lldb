@@ -17,10 +17,10 @@
 
 // C++ Includes
 // Other libraries and framework includes
-#include "lldb/Core/ConnectionFileDescriptor.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Host/ConnectionFileDescriptor.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
@@ -634,7 +634,7 @@ Error
 GDBRemoteCommunication::StartListenThread (const char *hostname, uint16_t port)
 {
     Error error;
-    if (m_listen_thread.GetState() == eThreadStateRunning)
+    if (m_listen_thread.IsJoinable())
     {
         error.SetErrorString("listen thread already running");
     }
@@ -655,11 +655,8 @@ GDBRemoteCommunication::StartListenThread (const char *hostname, uint16_t port)
 bool
 GDBRemoteCommunication::JoinListenThread ()
 {
-    if (m_listen_thread.GetState() == eThreadStateRunning)
-    {
+    if (m_listen_thread.IsJoinable())
         m_listen_thread.Join(nullptr);
-        m_listen_thread.Reset();
-    }
     return true;
 }
 

@@ -554,6 +554,22 @@ def skipIfLinux(func):
             func(*args, **kwargs)
     return wrapper
 
+def skipIfNoSBHeaders(func):
+    """Decorate the item to mark tests that should be skipped when LLDB is built with no SB API headers."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@skipIfNoSBHeaders can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        self = args[0]
+        platform = sys.platform
+        header = os.path.join(os.environ["LLDB_SRC"], "include", "lldb", "API", "LLDB.h")
+        if not os.path.exists(header):
+            self.skipTest("skip because LLDB.h header not found")
+        else:
+            func(*args, **kwargs)
+    return wrapper
+
 def skipIfWindows(func):
     """Decorate the item to skip tests that should be skipped on Windows."""
     if isinstance(func, type) and issubclass(func, unittest2.TestCase):
@@ -1132,7 +1148,11 @@ class Base(unittest2.TestCase):
                              os.environ["LLDB_SESSION_DIRNAME"])
         if not os.path.isdir(dname):
             os.mkdir(dname)
-        fname = os.path.join(dname, "%s-%s-%s-%s.log" % (prefix, self.getArchitecture(), "_".join(self.getCompiler().split('/')), self.id()))
+        compiler = self.getCompiler()
+        if compiler[1] == ':':
+            compiler = compiler[2:]
+
+        fname = os.path.join(dname, "%s-%s-%s-%s.log" % (prefix, self.getArchitecture(), "_".join(compiler.split(os.path.sep)), self.id()))
         with open(fname, "w") as f:
             import datetime
             print >> f, "Session info generated @", datetime.datetime.now().ctime()
