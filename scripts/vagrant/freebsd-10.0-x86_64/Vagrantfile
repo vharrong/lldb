@@ -1,0 +1,64 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
+VAGRANTFILE_API_VERSION = "2"
+
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+  # chef/freebsd-10.0 has too small a home directory.  We run out of space during build.
+  # This is the best vmware option thus far. Solve the disk space issue.
+  config.vm.box = "chef/freebsd-10.0"
+  
+  # geoffgarside/freebsd-10.0 fails to make it through boot on the vagrant side (vmware_fusion).
+  # config.vm.box = "geoffgarside/freebsd-10.0"
+
+  # hfm4/freebsd-10.0 fails to connect (virtualbox, no vmware option).
+  # config.vm.box = "hfm4/freebsd-10.0"
+
+  # The VMWare version of the chef/freebsd-10.0 box does not have
+  # bash installed, but the shell provisioner expects bash to be there.
+  # Change the shell for the shell provisioner.
+  config.ssh.shell = "/bin/sh"
+
+  # On FreeBSD, the default Vagrant synced_folder mechanism doesn't work.
+  # We need to use an extra private network (host/guest-only) and NFS.
+  config.vm.network :private_network, ip: "10.0.5.2"
+  config.vm.synced_folder ".", "/vagrant", :nfs => true
+
+  guest_memory_mb  = ENV["LLDB_GUEST_MEMORY_MB"] || 12 * 1024
+  guest_core_count = ENV["LLDB_GUEST_CORE_COUNT"] || 6 
+
+  #
+  # Provider (hypervisor)-specific configuration.
+  #
+  
+  # VMWare Fusion configuration.
+  config.vm.provider "vmware_fusion" do |v|
+    # We want 8 GB RAM, 4 CPUs.
+    # You may need to shrink this if your host has fewer resources.
+    v.vmx["memsize"] = "#{guest_memory_mb}"
+    v.vmx["numvcpus"] = "#{guest_core_count}"
+    
+    # Show the GUI when you have startup issues.
+    v.gui = true
+  end
+  
+  # VirtualBox configuration.
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = guest_memory_mb
+    vb.cpus   = guest_core_count
+    vb.customize ["modifyvm", :id, "--nictype1", "virtio"]
+    vb.customize ["modifyvm", :id, "--nictype2", "virtio"]
+    
+    # Show the GUI when you have startup issues.
+    vb.gui = true
+  end
+  
+  # Create a forwarded port mapping which allows access the guest with
+  # a local port.
+  local_guest_port = ENV["LLDB_PORT_FREEBSD_10.0_X86_64"] || 2023
+  config.vm.network "forwarded_port", guest: 22, host: local_guest_port
+
+  # Configure the box with our bootstrap.sh file.
+  config.vm.provision :shell, path: "bootstrap.sh"
+end
