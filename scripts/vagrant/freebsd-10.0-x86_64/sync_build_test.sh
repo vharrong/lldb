@@ -52,7 +52,7 @@ popd
 
 # Configure.
 # $CONFIGURE_SCRIPT -a -c --cache -g -l -n -s
-$CONFIGURE_SCRIPT -a -c -g -l -n -s
+$CONFIGURE_SCRIPT -a -c -l -n -s
 if [ $? != 0 ]; then
 	echo "error: lldb_configure.py failed"
 	exit 1

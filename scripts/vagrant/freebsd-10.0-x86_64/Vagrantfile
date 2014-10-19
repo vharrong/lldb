@@ -1,6 +1,9 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
+# This script requires the following vagrant plugins to be installed like so:
+#   vagrant plugin install vagrant-triggers
+
 # Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
 VAGRANTFILE_API_VERSION = "2"
 
@@ -9,12 +12,6 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   # This is the best vmware option thus far. Solve the disk space issue.
   config.vm.box = "chef/freebsd-10.0"
   
-  # geoffgarside/freebsd-10.0 fails to make it through boot on the vagrant side (vmware_fusion).
-  # config.vm.box = "geoffgarside/freebsd-10.0"
-
-  # hfm4/freebsd-10.0 fails to connect (virtualbox, no vmware option).
-  # config.vm.box = "hfm4/freebsd-10.0"
-
   # The VMWare version of the chef/freebsd-10.0 box does not have
   # bash installed, but the shell provisioner expects bash to be there.
   # Change the shell for the shell provisioner.
@@ -27,6 +24,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
   guest_memory_mb  = ENV["LLDB_GUEST_MEMORY_MB"] || 12 * 1024
   guest_core_count = ENV["LLDB_GUEST_CORE_COUNT"] || 6 
+  vm_disk_dir = "#{ENV['HOME']}/vagrant-disks/freebsd_lldb"
+  vm_disk_prefix = "#{vm_disk_dir}/freebsd_lldb"
 
   #
   # Provider (hypervisor)-specific configuration.
@@ -41,6 +40,22 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     
     # Show the GUI when you have startup issues.
     v.gui = true
+
+    # Create a second disk for lldb.
+    vdiskmanager_exe = '/Applications/VMware\ Fusion.app/Contents/Library/vmware-vdiskmanager'
+
+    unless File.directory?(vm_disk_dir)
+        Dir.mkdir vm_disk_dir
+    end
+
+    vm_disk_filename = "#{vm_disk_prefix}.vmdk"
+    unless File.exists?(vm_disk_filename)
+        `#{vdiskmanager_exe} -c -s 25GB -a lsilogic -t 1 #{vm_disk_filename}`
+    end
+
+    v.vmx['scsi0:1.filename'] = vm_disk_filename
+    v.vmx['scsi0:1.present']  = 'TRUE'
+    v.vmx['scsi0:1.redo']     = ''
   end
   
   # VirtualBox configuration.
@@ -49,7 +64,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     vb.cpus   = guest_core_count
     vb.customize ["modifyvm", :id, "--nictype1", "virtio"]
     vb.customize ["modifyvm", :id, "--nictype2", "virtio"]
-    
+
     # Show the GUI when you have startup issues.
     vb.gui = true
   end
@@ -61,4 +76,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
   # Configure the box with our bootstrap.sh file.
   config.vm.provision :shell, path: "bootstrap.sh"
+
+  # Cleanup of second vm disk if found, only after destroy.
+  config.trigger.after :destroy do
+    run "rm -rf #{vm_disk_dir}"
+  end
+
 end
