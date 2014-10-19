@@ -16,6 +16,7 @@ pkg install -y \
 	clang35 \
 	cmake \
 	git \
+	gmake \
 	ninja \
 	python \
 	subversion \
