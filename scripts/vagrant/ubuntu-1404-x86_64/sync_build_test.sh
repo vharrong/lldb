@@ -35,12 +35,16 @@ if [ ! -d "lldb/.git" ]; then
 		exit 1
 	fi
 
+	pushd lldb
+
 	# Checkout the appropriate branch.
 	git checkout -b $LLDB_BRANCH origin/$LLDB_BRANCH
 	if [ $? != 0 ]; then
-		echo "error: clone lldb failed"
+		echo "error: checkout lldb branch $LLDB_BRANCH failed"
 		exit 1
 	fi
+
+	popd
 fi
 
 popd
