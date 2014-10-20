@@ -25,9 +25,18 @@ pkg install -y \
 
 #
 # Add second disk.
-# On VMware fusion, it shows up as /dev/da1.
+# On VMware fusion, it shows up as /dev/da1.  On VirtualBox, it is /dev/ada1.
 #
-DISK_DEVICE_NAME=da1
+
+if [ -c /dev/ada1 ]; then
+	DISK_DEVICE_NAME=ada1
+elif [ -c /dev/da1 ]; then
+	DISK_DEVICE_NAME=da1
+else
+	echo "Can't find second disk device."
+	exit 1
+fi
+
 PARTITION_NAME=/dev/${DISK_DEVICE_NAME}p1
 MOUNT_DIR=/mnt/lldb
 

@@ -26,6 +26,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   guest_core_count = ENV["LLDB_GUEST_CORE_COUNT"] || 6 
   vm_disk_dir = "#{ENV['HOME']}/vagrant-disks/freebsd_lldb"
   vm_disk_prefix = "#{vm_disk_dir}/freebsd_lldb"
+  vm_disk_size_gb = 25
 
   #
   # Provider (hypervisor)-specific configuration.
@@ -50,7 +51,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
     vm_disk_filename = "#{vm_disk_prefix}.vmdk"
     unless File.exists?(vm_disk_filename)
-        `#{vdiskmanager_exe} -c -s 25GB -a lsilogic -t 1 #{vm_disk_filename}`
+        `#{vdiskmanager_exe} -c -s #{vm_disk_size_gb}GB -a lsilogic -t 1 #{vm_disk_filename}`
     end
 
     v.vmx['scsi0:1.filename'] = vm_disk_filename
@@ -64,6 +65,17 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     vb.cpus   = guest_core_count
     vb.customize ["modifyvm", :id, "--nictype1", "virtio"]
     vb.customize ["modifyvm", :id, "--nictype2", "virtio"]
+
+    # Create a second disk for lldb.
+    unless File.directory?(vm_disk_dir)
+        Dir.mkdir vm_disk_dir
+    end
+
+    vm_disk_filename = "#{vm_disk_prefix}.vdi"
+    unless File.exist?(vm_disk_filename)
+      vb.customize ['createhd', '--filename', vm_disk_filename, '--size', vm_disk_size_gb * 1024]
+    end
+    vb.customize ['storageattach', :id, '--storagectl', 'IDE Controller', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', vm_disk_filename]
 
     # Show the GUI when you have startup issues.
     vb.gui = true
