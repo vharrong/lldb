@@ -620,14 +620,13 @@ GetObjectPointer (lldb::StackFrameSP frame_sp,
     valobj_sp = frame_sp->GetValueForVariableExpressionPath(object_name.AsCString(),
                                                             lldb::eNoDynamicValues,
                                                             StackFrame::eExpressionPathOptionCheckPtrVsMember |
-                                                            StackFrame::eExpressionPathOptionsAllowDirectIVarAccess |
                                                             StackFrame::eExpressionPathOptionsNoFragileObjcIvar |
                                                             StackFrame::eExpressionPathOptionsNoSyntheticChildren |
                                                             StackFrame::eExpressionPathOptionsNoSyntheticArrayRange,
                                                             var_sp,
                                                             err);
 
-    if (!err.Success())
+    if (!err.Success() || !valobj_sp.get())
         return LLDB_INVALID_ADDRESS;
 
     lldb::addr_t ret = valobj_sp->GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
