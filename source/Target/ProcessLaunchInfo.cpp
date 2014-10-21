@@ -25,7 +25,6 @@ ProcessLaunchInfo::ProcessLaunchInfo () :
     ProcessInfo(),
     m_working_dir (),
     m_plugin_name (),
-    m_shell (),
     m_flags (0),
     m_file_actions (),
     m_pty (new lldb_utility::PseudoTerminal),
@@ -42,7 +41,6 @@ ProcessLaunchInfo::ProcessLaunchInfo(const char *stdin_path, const char *stdout_
     ProcessInfo(),
     m_working_dir(),
     m_plugin_name(),
-    m_shell(),
     m_flags(launch_flags),
     m_file_actions(),
     m_pty(new lldb_utility::PseudoTerminal),
@@ -181,27 +179,23 @@ ProcessLaunchInfo::SetProcessPluginName (const char *plugin)
         m_plugin_name.clear();
 }
 
-const char *
+const FileSpec &
 ProcessLaunchInfo::GetShell () const
 {
-    if (m_shell.empty())
-        return NULL;
-    return m_shell.c_str();
+    return m_shell;
 }
 
 void
-ProcessLaunchInfo::SetShell (const char * path)
+ProcessLaunchInfo::SetShell (const FileSpec &shell)
 {
-    if (path && path[0])
+    m_shell = shell;
+    if (m_shell)
     {
-        m_shell.assign (path);
+        m_shell.ResolveExecutableLocation();
         m_flags.Set (lldb::eLaunchFlagLaunchInShell);
     }
     else
-    {
-        m_shell.clear();
         m_flags.Clear (lldb::eLaunchFlagLaunchInShell);
-    }
 }
 
 void
@@ -220,7 +214,7 @@ ProcessLaunchInfo::Clear ()
     ProcessInfo::Clear();
     m_working_dir.clear();
     m_plugin_name.clear();
-    m_shell.clear();
+    m_shell.Clear();
     m_flags.Clear();
     m_file_actions.clear();
     m_resume_count = 0;
@@ -267,7 +261,8 @@ ProcessLaunchInfo::FinalizeFileActions (Target *target, bool default_to_use_pty)
 
     // If nothing for stdin or stdout or stderr was specified, then check the process for any default
     // settings that were set with "settings set"
-    if (GetFileActionForFD(STDIN_FILENO) == NULL || GetFileActionForFD(STDOUT_FILENO) == NULL ||
+    if (GetFileActionForFD(STDIN_FILENO) == NULL ||
+        GetFileActionForFD(STDOUT_FILENO) == NULL ||
         GetFileActionForFD(STDERR_FILENO) == NULL)
     {
         if (log)
@@ -294,9 +289,14 @@ ProcessLaunchInfo::FinalizeFileActions (Target *target, bool default_to_use_pty)
             FileSpec err_path;
             if (target)
             {
-                in_path = target->GetStandardInputPath();
-                out_path = target->GetStandardOutputPath();
-                err_path = target->GetStandardErrorPath();
+                // Only override with the target settings if we don't already have
+                // an action for in, out or error
+                if (GetFileActionForFD(STDIN_FILENO) == NULL)
+                    in_path = target->GetStandardInputPath();
+                if (GetFileActionForFD(STDOUT_FILENO) == NULL)
+                    out_path = target->GetStandardOutputPath();
+                if (GetFileActionForFD(STDERR_FILENO) == NULL)
+                    err_path = target->GetStandardErrorPath();
             }
 
             if (log)
@@ -344,17 +344,23 @@ ProcessLaunchInfo::FinalizeFileActions (Target *target, bool default_to_use_pty)
                 {
                     const char *slave_path = m_pty->GetSlaveName(NULL, 0);
 
-                    if (!in_path)
+                    // Only use the slave tty if we don't have anything specified for
+                    // input and don't have an action for stdin
+                    if (!in_path && GetFileActionForFD(STDIN_FILENO) == NULL)
                     {
                         AppendOpenFileAction(STDIN_FILENO, slave_path, true, false);
                     }
 
-                    if (!out_path)
+                    // Only use the slave tty if we don't have anything specified for
+                    // output and don't have an action for stdout
+                    if (!out_path && GetFileActionForFD(STDOUT_FILENO) == NULL)
                     {
                         AppendOpenFileAction(STDOUT_FILENO, slave_path, false, true);
                     }
 
-                    if (!err_path)
+                    // Only use the slave tty if we don't have anything specified for
+                    // error and don't have an action for stderr
+                    if (!err_path && GetFileActionForFD(STDERR_FILENO) == NULL)
                     {
                         AppendOpenFileAction(STDERR_FILENO, slave_path, false, true);
                     }
@@ -376,34 +382,17 @@ ProcessLaunchInfo::ConvertArgumentsForLaunchingInShell (Error &error,
 
     if (GetFlags().Test (eLaunchFlagLaunchInShell))
     {
-        const char *shell_executable = GetShell();
-        if (shell_executable)
+        if (m_shell)
         {
             char shell_resolved_path[PATH_MAX];
-
-            if (localhost)
-            {
-                FileSpec shell_filespec (shell_executable, true);
-
-                if (!shell_filespec.Exists())
-                {
-                    // Resolve the path in case we just got "bash", "sh" or "tcsh"
-                    if (!shell_filespec.ResolveExecutableLocation ())
-                    {
-                        error.SetErrorStringWithFormat("invalid shell path '%s'", shell_executable);
-                        return false;
-                    }
-                }
-                shell_filespec.GetPath (shell_resolved_path, sizeof(shell_resolved_path));
-                shell_executable = shell_resolved_path;
-            }
+            std::string shell_executable = m_shell.GetPath();
 
             const char **argv = GetArguments().GetConstArgumentVector ();
             if (argv == NULL || argv[0] == NULL)
                 return false;
             Args shell_arguments;
             std::string safe_arg;
-            shell_arguments.AppendArgument (shell_executable);
+            shell_arguments.AppendArgument (shell_executable.c_str());
             shell_arguments.AppendArgument ("-c");
             StreamString shell_command;
             if (will_debug)
@@ -482,7 +471,7 @@ ProcessLaunchInfo::ConvertArgumentsForLaunchingInShell (Error &error,
                 }
             }
             shell_arguments.AppendArgument (shell_command.GetString().c_str());
-            m_executable.SetFile(shell_executable, false);
+            m_executable = m_shell;
             m_arguments = shell_arguments;
             return true;
         }

@@ -24,8 +24,6 @@
 
 using namespace lldb_private;
 
-#ifndef __ANDROID_NDK__
-
 size_t
 HostInfoPosix::GetPageSize()
 {
@@ -127,6 +125,12 @@ HostInfoPosix::GetEffectiveGroupID()
     return getegid();
 }
 
+FileSpec
+HostInfoPosix::GetDefaultShell()
+{
+    return FileSpec("/bin/sh", false);
+}
+
 bool
 HostInfoPosix::ComputeSupportExeDirectory(FileSpec &file_spec)
 {
@@ -202,73 +206,3 @@ HostInfoPosix::ComputePythonDirectory(FileSpec &file_spec)
 #endif
 }
 
-#else // #ifndef __ANDROID_NDK__
-
-size_t
-HostInfoPosix::GetPageSize()
-{
-    return 0;
-}
-
-bool
-HostInfoPosix::GetHostname(std::string &s)
-{
-    return false;
-}
-
-const char *
-HostInfoPosix::LookupUserName(uint32_t uid, std::string &user_name)
-{
-    return NULL;
-}
-
-const char *
-HostInfoPosix::LookupGroupName(uint32_t gid, std::string &group_name)
-{
-
-    return NULL;
-}
-
-uint32_t
-HostInfoPosix::GetUserID()
-{
-	return 0;
-}
-
-uint32_t
-HostInfoPosix::GetGroupID()
-{
-	return 0;
-}
-
-uint32_t
-HostInfoPosix::GetEffectiveUserID()
-{
-	return 0;
-}
-
-uint32_t
-HostInfoPosix::GetEffectiveGroupID()
-{
-    return 0;
-}
-
-bool
-HostInfoPosix::ComputeSupportExeDirectory(FileSpec &file_spec)
-{
-    return true;
-}
-
-bool
-HostInfoPosix::ComputeHeaderDirectory(FileSpec &file_spec)
-{
-    return true;
-}
-
-bool
-HostInfoPosix::ComputePythonDirectory(FileSpec &file_spec)
-{
-    return true;
-}
-
-#endif // __ANDROID_NDK__
