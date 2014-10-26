@@ -26,7 +26,7 @@
 #include "lldb/lldb-private-log.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/ConnectionMachPort.h"
-//#include "lldb/Core/Debugger.h"
+#include "lldb/Core/Debugger.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Host/ConnectionFileDescriptor.h"
@@ -149,7 +149,6 @@ dump_available_platforms (FILE *output_file)
     }
 }
 
-#if 0
 static void
 run_lldb_commands (const lldb::DebuggerSP &debugger_sp, const std::vector<std::string> &lldb_commands)
 {
@@ -164,7 +163,6 @@ run_lldb_commands (const lldb::DebuggerSP &debugger_sp, const std::vector<std::s
             puts (output);
     }
 }
-#endif
 
 static lldb::PlatformSP
 setup_platform (const std::string &platform_name)
@@ -493,15 +491,13 @@ main (int argc, char *argv[])
     std::string named_pipe_path;
     bool reverse_connect = false;
 
-//    Debugger::Initialize (NULL);
+    Debugger::Initialize (NULL);
 
-#if 0
     lldb::DebuggerSP debugger_sp = Debugger::CreateInstance ();
 
     debugger_sp->SetInputFileHandle(stdin, false);
     debugger_sp->SetOutputFileHandle(stdout, false);
     debugger_sp->SetErrorFileHandle(stderr, false);
-#endif
 
     // ProcessLaunchInfo launch_info;
     ProcessAttachInfo attach_info;
@@ -643,7 +639,7 @@ main (int argc, char *argv[])
     }
 
     // Run any commands requested.
-    // run_lldb_commands (debugger_sp, lldb_commands);
+    run_lldb_commands (debugger_sp, lldb_commands);
 
     // Setup the platform that GDBRemoteCommunicationServer will use.
     lldb::PlatformSP platform_sp = setup_platform (platform_name);
@@ -669,7 +665,7 @@ main (int argc, char *argv[])
 
     ConnectToRemote (gdb_server, reverse_connect, host_and_port, progname, named_pipe_path.c_str ());
 
-//    Debugger::Terminate ();
+    Debugger::Terminate ();
 
     fprintf(stderr, "lldb-gdbserver exiting...\n");
 
