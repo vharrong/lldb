@@ -64,6 +64,7 @@ using namespace lldb_private;
 
 static uint32_t g_shared_debugger_refcount = 0;
 static lldb::user_id_t g_unique_id = 1;
+static size_t g_debugger_event_thread_stack_bytes = 8 * 1024 * 1024;
 
 #pragma mark Static Functions
 
@@ -1802,6 +1803,7 @@ FormatPromptRecurse
                                             log->Printf("[Debugger::FormatPrompt] ALL RIGHT: unparsed portion = %s, why stopping = %d,"
                                                " final_value_type %d",
                                                first_unparsed, reason_to_stop, final_value_type);
+                                        target = target->GetQualifiedRepresentationIfAvailable(target->GetDynamicValueType(), true).get();
                                     }
                                 }
                                 else
@@ -1850,8 +1852,8 @@ FormatPromptRecurse
                                 
                                 // TODO use flags for these
                                 const uint32_t type_info_flags = target->GetClangType().GetTypeInfo(NULL);
-                                bool is_array = (type_info_flags & ClangASTType::eTypeIsArray) != 0;
-                                bool is_pointer = (type_info_flags & ClangASTType::eTypeIsPointer) != 0;
+                                bool is_array = (type_info_flags & eTypeIsArray) != 0;
+                                bool is_pointer = (type_info_flags & eTypeIsPointer) != 0;
                                 bool is_aggregate = target->GetClangType().IsAggregateType();
                                 
                                 if ((is_array || is_pointer) && (!is_array_range) && val_obj_display == ValueObject::eValueObjectRepresentationStyleValue) // this should be wrong, but there are some exceptions
@@ -3321,11 +3323,9 @@ Debugger::StartEventHandlerThread()
 {
     if (!m_event_handler_thread.IsJoinable())
     {
-        m_event_handler_thread = ThreadLauncher::LaunchThread ("lldb.debugger.event-handler",
-                                                               EventHandlerThread,
-                                                               this,
-                                                               NULL,
-                                                               8*1024*1024); // Use larger 8MB stack for this thread
+        // Use larger 8MB stack for this thread
+        m_event_handler_thread = ThreadLauncher::LaunchThread("lldb.debugger.event-handler", EventHandlerThread, this, NULL,
+                                                              g_debugger_event_thread_stack_bytes);
     }
     return m_event_handler_thread.IsJoinable();
 }
