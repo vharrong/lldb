@@ -1191,6 +1191,14 @@ class Base(unittest2.TestCase):
         version = 'unknown'
 
         compiler = self.getCompiler()
+
+        # strip off leading spaces and prefixes (e.g. ccache, distcc, etc.)
+        compiler_split = compiler.split(" ")
+        for word in reversed(compiler_split) :
+            if which(word) != None :
+                compiler = word
+                break
+
         version_output = system([[which(compiler), "-v"]])[1]
         for line in version_output.split(os.linesep):
             m = re.search('version ([0-9\.]+)', line)
