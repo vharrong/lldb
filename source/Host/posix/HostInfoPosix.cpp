@@ -205,4 +205,3 @@ HostInfoPosix::ComputePythonDirectory(FileSpec &file_spec)
     return false;
 #endif
 }
-

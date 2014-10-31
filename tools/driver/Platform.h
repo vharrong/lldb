@@ -107,9 +107,9 @@
 #if !defined(__ANDROID_NDK__)
 	#include <histedit.h>
 	#if defined(__FreeBSD__) || defined(__NetBSD__)
-    	#include <readline/readline.h>
+		#include <readline/readline.h>
 	#else
-    	#include <editline/readline.h>
+		#include <editline/readline.h>
 	#endif
 #endif
 

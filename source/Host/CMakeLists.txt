@@ -86,19 +86,19 @@ else()
         #android/Host.cpp
         #android/HostInfoAndroid.cpp
         #android/HostThreadAndroid.cpp
-        #android/ThisThread.cpp        
+        #android/ThisThread.cpp
         android/EditLineAndroid.cpp
         linux/Host.cpp
         linux/HostInfoLinux.cpp
         linux/HostThreadLinux.cpp
-        linux/ThisThread.cpp                
+        linux/ThisThread.cpp
         )
     else()
       add_host_subdirectory(linux
         linux/Host.cpp
         linux/HostInfoLinux.cpp
         linux/HostThreadLinux.cpp
-        linux/ThisThread.cpp        
+        linux/ThisThread.cpp
         )
     endif()
   elseif (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")

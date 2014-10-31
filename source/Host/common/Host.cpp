@@ -177,7 +177,7 @@ MonitorChildProcessThreadFunction (void *arg)
 #endif
         // Get signals from all children with same process group of pid
         const ::pid_t wait_pid = ::waitpid (pid, &status, options);
-#if !defined(__ANDROID__) && !defined(__ANDROID_NDK__)        
+#if !defined(__ANDROID__) && !defined(__ANDROID_NDK__)
         ::pthread_testcancel ();
 #endif
         if (wait_pid == -1)
