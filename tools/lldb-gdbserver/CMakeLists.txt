@@ -15,14 +15,6 @@ include_directories(
 endif ()
 include_directories(../../source)
 
-if (NOT LLDB_DISABLE_PYTHON)
-    find_package(PythonLibs REQUIRED)
-    include_directories(${PYTHON_INCLUDE_DIRS})
-endif()
-
-include_directories(../clang/include)
-include_directories("${CMAKE_CURRENT_BINARY_DIR}/../clang/include")
-
 set( LLDB_USED_LIBS
   lldbBreakpoint
   lldbCommands
