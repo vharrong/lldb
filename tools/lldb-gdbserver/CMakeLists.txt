@@ -17,13 +17,14 @@ include_directories(../../source)
 
 include(../../cmake/LLDBDependencies.cmake)
 
+# have to include lldb and lldb-log files since those are not libraries and llgs depends on them
 add_lldb_executable(lldb-gdbserver
   lldb-gdbserver.cpp
   ../../source/lldb-log.cpp
   ../../source/lldb.cpp
   )
 
-#set(lldb_keyword ${cmake_2_8_12_PRIVATE})
+set(lldb_keyword ${cmake_2_8_12_PRIVATE})
 # The Darwin linker doesn't understand --start-group/--end-group.
 if (LLVM_COMPILER_IS_GCC_COMPATIBLE AND NOT "${CMAKE_SYSTEM_NAME}" MATCHES "Darwin")
   target_link_libraries(lldb-gdbserver ${lldb_keyword}
