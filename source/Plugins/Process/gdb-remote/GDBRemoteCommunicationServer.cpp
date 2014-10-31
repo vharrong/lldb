@@ -100,7 +100,8 @@ GDBRemoteCommunicationServer::GDBRemoteCommunicationServer(bool is_platform) :
 }
 
 GDBRemoteCommunicationServer::GDBRemoteCommunicationServer(bool is_platform,
-                                                           const lldb::PlatformSP& platform_sp) :
+                                                           const lldb::PlatformSP& platform_sp,
+                                                           lldb::DebuggerSP &debugger_sp) :
     GDBRemoteCommunication ("gdb-remote.server", "gdb-remote.server.rx_packet", is_platform),
     m_platform_sp (platform_sp),
     m_async_thread (LLDB_INVALID_HOST_THREAD),
@@ -116,7 +117,7 @@ GDBRemoteCommunicationServer::GDBRemoteCommunicationServer(bool is_platform,
     m_continue_tid (LLDB_INVALID_THREAD_ID),
     m_debugged_process_mutex (Mutex::eMutexTypeRecursive),
     m_debugged_process_sp (),
-    m_debugger_sp (),
+    m_debugger_sp (debugger_sp),
     m_stdio_communication ("process.stdio"),
     m_exit_now (false),
     m_inferior_prev_state (StateType::eStateInvalid),
@@ -127,7 +128,8 @@ GDBRemoteCommunicationServer::GDBRemoteCommunicationServer(bool is_platform,
     m_saved_registers_map (),
     m_next_saved_registers_id (1)
 {
-    assert((!is_platform && platform_sp) && "must specify non-NULL debugger_sp when lldb-gdbserver");
+    assert(platform_sp);
+    assert((is_platform || debugger_sp) && "must specify non-NULL debugger_sp when lldb-gdbserver");
 }
 
 //----------------------------------------------------------------------

@@ -645,7 +645,7 @@ main (int argc, char *argv[])
     lldb::PlatformSP platform_sp = setup_platform (platform_name);
 
     const bool is_platform = false;
-    GDBRemoteCommunicationServer gdb_server (is_platform, platform_sp);
+    GDBRemoteCommunicationServer gdb_server (is_platform, platform_sp, debugger_sp);
 
     const char *const host_and_port = argv[0];
     argc -= 1;

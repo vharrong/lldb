@@ -13,9 +13,9 @@
 #include <errno.h>
 
 #define _isatty			isatty
-#define SYS_tgkill 		__NR_tgkill
-#define PT_DETACH 		PTRACE_DETACH
+#define SYS_tgkill		__NR_tgkill
+#define PT_DETACH		PTRACE_DETACH
 
-typedef int 			__ptrace_request;
+typedef int				__ptrace_request;
 
 #endif  // LLDB_lldb_android_h_

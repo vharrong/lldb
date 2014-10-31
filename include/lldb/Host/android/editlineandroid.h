@@ -7,8 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#pragma once
-
 #include <stdio.h>
 
 // EditLine editor function return codes.
