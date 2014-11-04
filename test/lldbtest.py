@@ -137,6 +137,8 @@ VALID_SYMBOL = "Got a valid symbol"
 
 VALID_TARGET = "Got a valid target"
 
+VALID_PLATFORM = "Got a valid platform"
+
 VALID_TYPE = "Got a valid type"
 
 VALID_VARIABLE = "Got a valid variable"
@@ -563,8 +565,8 @@ def skipIfNoSBHeaders(func):
     def wrapper(*args, **kwargs):
         from unittest2 import case
         self = args[0]
+        header = os.path.join(self.lib_dir, 'LLDB.framework', 'Versions','Current','Headers','LLDB.h')
         platform = sys.platform
-        header = os.path.join(os.environ["LLDB_SRC"], "include", "lldb", "API", "LLDB.h")
         if not os.path.exists(header):
             self.skipTest("skip because LLDB.h header not found")
         else:
@@ -1015,9 +1017,9 @@ class Base(unittest2.TestCase):
             except (ValueError, pexpect.ExceptionPexpect):
                 # child is already terminated
                 pass
-            finally:
-                # Give it one final blow to make sure the child is terminated.
-                self.child.close()
+	    finally:
+		# Give it one final blow to make sure the child is terminated.
+		self.child.close()
 
 
     def tearDown(self):

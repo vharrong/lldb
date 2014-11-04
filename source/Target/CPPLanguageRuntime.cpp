@@ -11,6 +11,8 @@
 
 #include <string.h>
 
+#include "llvm/ADT/StringRef.h"
+
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/UniqueCStringMap.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -190,30 +192,17 @@ CPPLanguageRuntime::IsCPPMangledName (const char *name)
 }
 
 bool
-CPPLanguageRuntime::StripNamespacesFromVariableName (const char *name, const char *&base_name_start, const char *&base_name_end)
+CPPLanguageRuntime::ExtractContextAndIdentifier (const char *name, llvm::StringRef &context, llvm::StringRef &identifier)
 {
-    if (base_name_end == NULL)
-        base_name_end = name + strlen (name);
-    
-    const char *last_colon = strrchr (name, ':');
-    
-    if (last_colon == NULL)
+    static RegularExpression g_basename_regex("^(([A-Za-z_][A-Za-z_0-9]*::)*)([A-Za-z_][A-Za-z_0-9]*)$");
+    RegularExpression::Match match(4);
+    if (g_basename_regex.Execute (name, &match))
     {
-        base_name_start = name;
+        match.GetMatchAtIndex(name, 1, context);
+        match.GetMatchAtIndex(name, 3, identifier);
         return true;
     }
-    
-    // Can't have a C++ name that begins with a single ':', nor contains an internal single ':'
-    if (last_colon == name)
-        return false;
-    else if (last_colon[-1] != ':')
-        return false;
-    else
-    {
-        // FIXME: should check if there is
-        base_name_start = last_colon + 1;
-        return true;
-    }
+    return false;
 }
 
 uint32_t
