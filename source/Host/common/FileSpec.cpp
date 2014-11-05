@@ -39,6 +39,7 @@
 #include "lldb/Utility/CleanUp.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
@@ -504,26 +505,29 @@ FileSpec::ResolveExecutableLocation ()
         if (file_cstr)
         {
             const std::string file_str (file_cstr);
-            std::string path = llvm::sys::FindProgramByName (file_str);
-            llvm::StringRef dir_ref = llvm::sys::path::parent_path(path);
-            if (!dir_ref.empty())
+            llvm::ErrorOr<std::string> path = llvm::sys::findProgramByName (file_str);
+            if (path)
             {
-                // FindProgramByName returns "." if it can't find the file.
-                if (strcmp (".", dir_ref.data()) == 0)
-                    return false;
-
-                m_directory.SetCString (dir_ref.data());
-                if (Exists())
-                    return true;
-                else
+                llvm::StringRef dir_ref = llvm::sys::path::parent_path(llvm::StringRef(path->c_str()));
+                if (!dir_ref.empty())
                 {
-                    // If FindProgramByName found the file, it returns the directory + filename in its return results.
-                    // We need to separate them.
-                    FileSpec tmp_file (dir_ref.data(), false);
-                    if (tmp_file.Exists())
-                    {
-                        m_directory = tmp_file.m_directory;
+                    // FindProgramByName returns "." if it can't find the file.
+                    if (strcmp (".", dir_ref.data()) == 0)
+                        return false;
+
+                    m_directory.SetCString (dir_ref.data());
+                    if (Exists())
                         return true;
+                    else
+                    {
+                        // If FindProgramByName found the file, it returns the directory + filename in its return results.
+                        // We need to separate them.
+                        FileSpec tmp_file (dir_ref.data(), false);
+                        if (tmp_file.Exists())
+                        {
+                            m_directory = tmp_file.m_directory;
+                            return true;
+                        }
                     }
                 }
             }
