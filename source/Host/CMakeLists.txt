@@ -32,7 +32,7 @@ add_host_subdirectory(common
   common/TimeValue.cpp
   )
 
-if (NOT LLDB_DISABLE_LIBEDIT)
+if (NOT __ANDROID_NDK__)
 add_host_subdirectory(common
   common/Editline.cpp
   )
