@@ -34,7 +34,7 @@ include( CMakeForceCompiler )
 
 # flags and definitions
 remove_definitions( -DANDROID -D__ANDROID__ )
-add_definitions( -DANDROID -D__ANDROID_NDK__ -DLLDB_DISABLE_LIBEDIT )
+add_definitions( -DANDROID -D__ANDROID_NDK__ )
 set( ANDROID True )
 set( __ANDROID_NDK__ True )
 

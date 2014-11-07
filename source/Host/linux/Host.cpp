@@ -26,6 +26,9 @@
 #include "lldb/Target/Process.h"
 
 #include "lldb/Host/Host.h"
+#ifdef __ANDROID_NDK__
+#include "lldb/Host/android/Android.h"
+#endif
 #include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/DataExtractor.h"
 
@@ -149,19 +152,6 @@ GetLinuxProcessUserAndGroup (lldb::pid_t pid, ProcessInstanceInfo &process_info,
     process_info.SetGroupID (rGid);
     process_info.SetEffectiveGroupID (eGid);
 }
-
-#ifdef __ANDROID_NDK__
-namespace std
-{
-	template <typename T>
-	std::string to_string(T value)
-	{
-		std::ostringstream os ;
-		os << value ;
-		return os.str() ;
-	}
-}
-#endif
 
 lldb::DataBufferSP
 Host::GetAuxvData(lldb_private::Process *process)

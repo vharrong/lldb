@@ -16,10 +16,10 @@
 #include <stdio.h>
 #if defined(_WIN32)
 #include "lldb/Host/windows/editlinewin.h"
-#elif defined(__ANDROID_NDK__)
-#include "lldb/Host/android/editlineandroid.h"
 #else
+#if !defined(__ANDROID_NDK__)
 #include <histedit.h>
+#endif
 #endif
 
 #include <string>

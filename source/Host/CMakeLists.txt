@@ -5,7 +5,6 @@ endmacro()
 
 add_host_subdirectory(common
   common/Condition.cpp
-  common/Editline.cpp
   common/File.cpp
   common/FileCache.cpp
   common/FileSpec.cpp
@@ -32,6 +31,12 @@ add_host_subdirectory(common
   common/ThreadLauncher.cpp
   common/TimeValue.cpp
   )
+
+if (NOT LLDB_DISABLE_LIBEDIT)
+add_host_subdirectory(common
+  common/Editline.cpp
+  )
+endif()
 
 add_host_subdirectory(posix
   posix/ConnectionFileDescriptorPosix.cpp
@@ -83,11 +88,6 @@ else()
   elseif (CMAKE_SYSTEM_NAME MATCHES "Linux")
     if (__ANDROID_NDK__)
       add_host_subdirectory(android
-        #android/Host.cpp
-        #android/HostInfoAndroid.cpp
-        #android/HostThreadAndroid.cpp
-        #android/ThisThread.cpp
-        android/EditLineAndroid.cpp
         linux/Host.cpp
         linux/HostInfoLinux.cpp
         linux/HostThreadLinux.cpp
