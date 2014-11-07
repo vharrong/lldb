@@ -1,3 +1,24 @@
+# Toolchain config for Android standalone NDK.
+#
+# Usage:
+# build host llvm and clang first
+# cmake -DCMAKE_TOOLCHAIN_FILE=../lldb/cmake/platforms/Android.cmake \
+#       -DANDROID_TOOLCHAIN_DIR=<toolchain_dir> \
+#       -DANDROID_ABI=<target_abi> \
+#       -DCMAKE_CXX_COMPILER_VERSION=<gcc_version> \
+#       -DLLVM_TARGET_ARCH=<llvm_target_arch> \
+#       -DLLVM_TARGETS_TO_BUILD=<llvm_targets_to_build> \
+#       -DLLVM_TABLEGEN=<path_to_llvm-tblgen> \
+#       -DCLANG_TABLEGEN=<path_to_clang-tblgen>
+#
+# Current Support:
+#   ANDROID_ABI = x86, x86_64
+#   CMAKE_CXX_COMPILER_VERSION = 4.9
+#   LLVM_TARGET_ARCH = X86
+#   LLVM_TARGETS_TO_BUILD = X86
+#   LLVM_TABLEGEN = path to host llvm-tblgen
+#   CLANG_TABLEGEN = path to host clang-tblgen
+
 if( DEFINED CMAKE_CROSSCOMPILING )
  return()
 endif()
@@ -30,6 +51,9 @@ endif()
 
 set( ANDROID_TOOLCHAIN_DIR "${ANDROID_TOOLCHAIN_DIR}" CACHE INTERNAL "Android standalone toolchain directory" FORCE )
 set( ANDROID_SYSROOT "${ANDROID_TOOLCHAIN_DIR}/sysroot" CACHE INTERNAL "Android Sysroot" FORCE )
+
+# force python exe to be the one in Android toolchian
+set( PYTHON_EXECUTABLE "${ANDROID_TOOLCHAIN_DIR}/bin/python" CACHE INTERNAL "Python exec path" FORCE )
 
 if( NOT CMAKE_C_COMPILER )
  set( CMAKE_C_COMPILER   "${ANDROID_TOOLCHAIN_DIR}/bin/${ANDROID_TOOLCHAIN_NAME}-gcc"     CACHE PATH "C compiler" )
