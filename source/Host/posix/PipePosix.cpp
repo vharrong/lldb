@@ -9,6 +9,7 @@
 
 #include "lldb/Host/posix/PipePosix.h"
 
+#include <fcntl.h>
 #include <unistd.h>
 
 using namespace lldb_private;
@@ -34,7 +35,11 @@ Pipe::Open()
     if (IsValid())
         return true;
 
+    #if defined(__linux__) && defined(O_CLOEXEC)
+    if (::pipe2(m_fds, O_CLOEXEC) == 0)
+    #else
     if (::pipe(m_fds) == 0)
+    #endif
         return true;
 
     m_fds[READ] = Pipe::kInvalidDescriptor;

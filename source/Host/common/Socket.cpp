@@ -47,6 +47,27 @@ const NativeSocket Socket::kInvalidSocketValue = -1;
 #endif
 #endif // #ifdef __ANDROID__
 
+namespace {
+
+NativeSocket CreateSocket(const int domain, const int type, const int protocol)
+{
+  auto socketType = type;
+  #ifdef SOCK_CLOEXEC
+  socketType |= SOCK_CLOEXEC;
+  #endif
+  return ::socket (domain, socketType, protocol);
+}
+
+NativeSocket Accept(NativeSocket sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+  #ifdef SOCK_CLOEXEC
+  return ::accept4(sockfd, addr, addrlen, SOCK_CLOEXEC);
+  #else
+  return ::accept(sockfd, addr, addrlen);
+  #endif
+}
+}
+
 Socket::Socket(NativeSocket socket, SocketProtocol protocol, bool should_close)
     : IOObject(eFDTypeSocket, should_close)
     , m_protocol(protocol)
@@ -78,7 +99,7 @@ Error Socket::TcpConnect(llvm::StringRef host_and_port, Socket *&socket)
         return error;
 
     // Create the socket
-    sock = ::socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    sock = CreateSocket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sock == kInvalidSocketValue)
     {
         // TODO: On Windows, use WSAGetLastError().
@@ -141,7 +162,7 @@ Error Socket::TcpListen(llvm::StringRef host_and_port, Socket *&socket, Predicat
     const sa_family_t family = AF_INET;
     const int socktype = SOCK_STREAM;
     const int protocol = IPPROTO_TCP;
-    listen_sock = ::socket (family, socktype, protocol);
+    listen_sock = ::CreateSocket (family, socktype, protocol);
     if (listen_sock == kInvalidSocketValue)
     {
         error.SetErrorToErrno();
@@ -242,7 +263,7 @@ Error Socket::BlockingAccept(llvm::StringRef host_and_port, Socket *&socket)
 #endif
         socklen_t accept_addr_len = sizeof accept_addr;
 
-        int sock = ::accept (this->GetNativeSocket(), (struct sockaddr *)&accept_addr, &accept_addr_len);
+        int sock = Accept(this->GetNativeSocket(), (struct sockaddr *)&accept_addr, &accept_addr_len);
             
         if (sock == kInvalidSocketValue)
         {
@@ -307,7 +328,7 @@ Error Socket::UdpConnect(llvm::StringRef host_and_port, Socket *&send_socket, So
 
     // Setup the receiving end of the UDP connection on this localhost
     // on port zero. After we bind to port zero we can read the port.
-    final_recv_fd = ::socket (AF_INET, SOCK_DGRAM, 0);
+    final_recv_fd = ::CreateSocket (AF_INET, SOCK_DGRAM, 0);
     if (final_recv_fd == kInvalidSocketValue)
     {
         // Socket creation failed...
@@ -358,9 +379,9 @@ Error Socket::UdpConnect(llvm::StringRef host_and_port, Socket *&send_socket, So
          service_info_ptr != NULL; 
          service_info_ptr = service_info_ptr->ai_next) 
     {
-        final_send_fd = ::socket (service_info_ptr->ai_family, 
-                                  service_info_ptr->ai_socktype,
-                                  service_info_ptr->ai_protocol);
+        final_send_fd = ::CreateSocket (service_info_ptr->ai_family,
+                                        service_info_ptr->ai_socktype,
+                                        service_info_ptr->ai_protocol);
 
         if (final_send_fd != kInvalidSocketValue)
         {
@@ -395,7 +416,7 @@ Error Socket::UnixDomainConnect(llvm::StringRef name, Socket *&socket)
 
     // Open the socket that was passed in as an option
     struct sockaddr_un saddr_un;
-    int fd = ::socket (AF_UNIX, SOCK_STREAM, 0);
+    int fd = ::CreateSocket (AF_UNIX, SOCK_STREAM, 0);
     if (fd == kInvalidSocketValue)
     {
         error.SetErrorToErrno();
@@ -434,7 +455,7 @@ Error Socket::UnixDomainAccept(llvm::StringRef name, Socket *&socket)
     NativeSocket listen_fd = kInvalidSocketValue;
     NativeSocket socket_fd = kInvalidSocketValue;
     
-    listen_fd = ::socket (AF_UNIX, SOCK_STREAM, 0);
+    listen_fd = ::CreateSocket (AF_UNIX, SOCK_STREAM, 0);
     if (listen_fd == kInvalidSocketValue)
     {
         error.SetErrorToErrno();
@@ -456,7 +477,7 @@ Error Socket::UnixDomainAccept(llvm::StringRef name, Socket *&socket)
     {
         if (::listen (listen_fd, 5) == 0) 
         {
-            socket_fd = ::accept (listen_fd, NULL, 0);
+            socket_fd = Accept (listen_fd, NULL, 0);
             if (socket_fd > 0)
             {
                 final_socket.reset(new Socket(socket_fd, ProtocolUnixDomain, true));
