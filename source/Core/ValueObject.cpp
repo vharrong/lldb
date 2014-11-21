@@ -34,6 +34,7 @@
 #include "lldb/Core/ValueObjectSyntheticFilter.h"
 
 #include "lldb/DataFormatters/DataVisualization.h"
+#include "lldb/DataFormatters/StringPrinter.h"
 #include "lldb/DataFormatters/ValueObjectPrinter.h"
 
 #include "lldb/Host/Endian.h"
@@ -43,6 +44,7 @@
 
 #include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/Type.h"
 
 #include "lldb/Target/ExecutionContext.h"
@@ -840,6 +842,14 @@ bool
 ValueObject::GetSummaryAsCString (TypeSummaryImpl* summary_ptr,
                                   std::string& destination)
 {
+    return GetSummaryAsCString(summary_ptr, destination, TypeSummaryOptions());
+}
+
+bool
+ValueObject::GetSummaryAsCString (TypeSummaryImpl* summary_ptr,
+                                  std::string& destination,
+                                  const TypeSummaryOptions& options)
+{
     destination.clear();
 
     // ideally we would like to bail out if passing NULL, but if we do so
@@ -862,7 +872,7 @@ ValueObject::GetSummaryAsCString (TypeSummaryImpl* summary_ptr,
         {
             if (HasSyntheticValue())
                 m_synthetic_value->UpdateValueIfNeeded(); // the summary might depend on the synthetic children being up-to-date (e.g. ${svar%#})
-            summary_ptr->FormatObject(this, destination);
+            summary_ptr->FormatObject(this, destination, options);
         }
         else
         {
@@ -927,11 +937,21 @@ ValueObject::GetSummaryAsCString ()
     if (UpdateValueIfNeeded(true) && m_summary_str.empty())
     {
         GetSummaryAsCString(GetSummaryFormat().get(),
-                            m_summary_str);
+                            m_summary_str,
+                            TypeSummaryOptions());
     }
     if (m_summary_str.empty())
         return NULL;
     return m_summary_str.c_str();
+}
+
+bool
+ValueObject::GetSummaryAsCString (std::string& destination,
+                                  const TypeSummaryOptions& options)
+{
+    return GetSummaryAsCString(GetSummaryFormat().get(),
+                        destination,
+                        options);
 }
 
 bool
@@ -1187,20 +1207,31 @@ strlen_or_inf (const char* str,
     return len;
 }
 
+static bool
+CopyStringDataToBufferSP(const StreamString& source,
+                         lldb::DataBufferSP& destination)
+{
+    destination.reset(new DataBufferHeap(source.GetSize()+1,0));
+    memcpy(destination->GetBytes(), source.GetString().c_str(), source.GetSize());
+    return true;
+}
+
 size_t
-ValueObject::ReadPointedString (Stream& s,
+ValueObject::ReadPointedString (lldb::DataBufferSP& buffer_sp,
                                 Error& error,
                                 uint32_t max_length,
                                 bool honor_array,
                                 Format item_format)
 {
+    StreamString s;
     ExecutionContext exe_ctx (GetExecutionContextRef());
     Target* target = exe_ctx.GetTargetPtr();
-
+    
     if (!target)
     {
         s << "<no target to read from>";
         error.SetErrorString("no target to read from");
+        CopyStringDataToBufferSP(s, buffer_sp);
         return 0;
     }
     
@@ -1246,9 +1277,10 @@ ValueObject::ReadPointedString (Stream& s,
         {
             s << "<invalid address>";
             error.SetErrorString("invalid address");
+            CopyStringDataToBufferSP(s, buffer_sp);
             return 0;
         }
-
+        
         Address cstr_so_addr (cstr_address);
         DataExtractor data;
         if (cstr_len > 0 && honor_array)
@@ -1256,30 +1288,21 @@ ValueObject::ReadPointedString (Stream& s,
             // I am using GetPointeeData() here to abstract the fact that some ValueObjects are actually frozen pointers in the host
             // but the pointed-to data lives in the debuggee, and GetPointeeData() automatically takes care of this
             GetPointeeData(data, 0, cstr_len);
-
+            
             if ((bytes_read = data.GetByteSize()) > 0)
             {
                 total_bytes_read = bytes_read;
-                s << '"';
-                data.Dump (&s,
-                           0,                 // Start offset in "data"
-                           item_format,
-                           1,                 // Size of item (1 byte for a char!)
-                           bytes_read,        // How many bytes to print?
-                           UINT32_MAX,        // num per line
-                           LLDB_INVALID_ADDRESS,// base address
-                           0,                 // bitfield bit size
-                           0);                // bitfield bit offset
+                for (size_t offset = 0; offset < bytes_read; offset++)
+                    s.Printf("%c", *data.PeekData(offset, 1));
                 if (capped_data)
                     s << "...";
-                s << '"';
             }
         }
         else
         {
             cstr_len = max_length;
             const size_t k_max_buf_size = 64;
-                                        
+            
             size_t offset = 0;
             
             int cstr_len_displayed = -1;
@@ -1293,12 +1316,10 @@ ValueObject::ReadPointedString (Stream& s,
                 size_t len = strlen_or_inf (cstr, k_max_buf_size, k_max_buf_size+1);
                 if (len > k_max_buf_size)
                     len = k_max_buf_size;
-                if (cstr && cstr_len_displayed < 0)
-                    s << '"';
-
+                
                 if (cstr_len_displayed < 0)
                     cstr_len_displayed = len;
-
+                
                 if (len == 0)
                     break;
                 cstr_len_displayed += len;
@@ -1307,15 +1328,8 @@ ValueObject::ReadPointedString (Stream& s,
                 if (len > cstr_len)
                     len = cstr_len;
                 
-                data.Dump (&s,
-                           0,                 // Start offset in "data"
-                           item_format,
-                           1,                 // Size of item (1 byte for a char!)
-                           len,               // How many bytes to print?
-                           UINT32_MAX,        // num per line
-                           LLDB_INVALID_ADDRESS,// base address
-                           0,                 // bitfield bit size
-                           0);                // bitfield bit offset
+                for (size_t offset = 0; offset < bytes_read; offset++)
+                    s.Printf("%c", *data.PeekData(offset, 1));
                 
                 if (len < k_max_buf_size)
                     break;
@@ -1325,14 +1339,13 @@ ValueObject::ReadPointedString (Stream& s,
                     capped_cstr = true;
                     break;
                 }
-
+                
                 cstr_len -= len;
                 offset += len;
             }
             
             if (cstr_len_displayed >= 0)
             {
-                s << '"';
                 if (capped_cstr)
                     s << "...";
             }
@@ -1343,6 +1356,7 @@ ValueObject::ReadPointedString (Stream& s,
         error.SetErrorString("not a string object");
         s << "<not a string object>";
     }
+    CopyStringDataToBufferSP(s, buffer_sp);
     return total_bytes_read;
 }
 
@@ -1590,11 +1604,19 @@ ValueObject::DumpPrintableRepresentation(Stream& s,
                  custom_format == eFormatVectorOfChar)) // print char[] & char* directly
             {
                 Error error;
-                ReadPointedString(s,
+                lldb::DataBufferSP buffer_sp;
+                ReadPointedString(buffer_sp,
                                   error,
                                   0,
                                   (custom_format == eFormatVectorOfChar) ||
                                   (custom_format == eFormatCharArray));
+                lldb_private::formatters::ReadBufferAndDumpToStreamOptions options(*this);
+                options.SetData(DataExtractor(buffer_sp, lldb::eByteOrderInvalid, 8)); // none of this matters for a string - pass some defaults
+                options.SetStream(&s);
+                options.SetPrefixToken(0);
+                options.SetQuote('"');
+                options.SetSourceSize(buffer_sp->GetByteSize());
+                lldb_private::formatters::ReadBufferAndDumpToStream<lldb_private::formatters::StringElementType::ASCII>(options);
                 return !error.Fail();
             }
             
@@ -4128,6 +4150,29 @@ ValueObject::GetFormat () const
         with_fmt_info = with_fmt_info->m_parent;
     }
     return m_format;
+}
+
+lldb::LanguageType
+ValueObject::GetPreferredDisplayLanguage ()
+{
+    lldb::LanguageType type = lldb::eLanguageTypeUnknown;
+    if (GetRoot())
+    {
+        if (GetRoot() == this)
+        {
+            if (StackFrameSP frame_sp = GetFrameSP())
+            {
+                const SymbolContext& sc(frame_sp->GetSymbolContext(eSymbolContextCompUnit));
+                if (CompileUnit* cu = sc.comp_unit)
+                    type = cu->GetLanguage();
+            }
+        }
+        else
+        {
+            type = GetRoot()->GetPreferredDisplayLanguage();
+        }
+    }
+    return type;
 }
 
 bool

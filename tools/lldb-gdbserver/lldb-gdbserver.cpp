@@ -355,6 +355,7 @@ ConnectToRemote (GDBRemoteCommunicationServer &gdb_server, bool reverse_connect,
 
             // Create the connection.
             std::unique_ptr<ConnectionFileDescriptor> connection_up (new ConnectionFileDescriptor ());
+            connection_up.reset (new ConnectionFileDescriptor ());
             auto connection_result = connection_up->Connect (connection_url, &error);
             if (connection_result != eConnectionStatusSuccess)
             {

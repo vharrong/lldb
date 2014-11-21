@@ -133,6 +133,18 @@ SBLaunchInfo::SetExecutableFile (SBFileSpec exe_file, bool add_as_first_arg)
     m_opaque_sp->SetExecutableFile(exe_file.ref(), add_as_first_arg);
 }
 
+SBListener
+SBLaunchInfo::GetListener ()
+{
+    return SBListener(m_opaque_sp->GetListener());
+}
+
+void
+SBLaunchInfo::SetListener (SBListener &listener)
+{
+    m_opaque_sp->SetListener(listener.GetSP());
+}
+
 uint32_t
 SBLaunchInfo::GetNumArguments ()
 {
@@ -520,6 +532,17 @@ SBAttachInfo::ParentProcessIDIsValid()
     return m_opaque_sp->ParentProcessIDIsValid();
 }
 
+SBListener
+SBAttachInfo::GetListener ()
+{
+    return SBListener(m_opaque_sp->GetListener());
+}
+
+void
+SBAttachInfo::SetListener (SBListener &listener)
+{
+    m_opaque_sp->SetListener(listener.GetSP());
+}
 
 //----------------------------------------------------------------------
 // SBTarget constructor
@@ -751,9 +774,9 @@ SBTarget::Launch
             launch_info.GetEnvironmentEntries ().SetArguments (envp);
 
         if (listener.IsValid())
-            error.SetError (target_sp->Launch(listener.ref(), launch_info, NULL));
-        else
-            error.SetError (target_sp->Launch(target_sp->GetDebugger().GetListener(), launch_info, NULL));
+            launch_info.SetListener(listener.GetSP());
+
+        error.SetError (target_sp->Launch(launch_info, NULL));
 
         sb_process.SetSP(target_sp->GetProcessSP());
     }
@@ -817,7 +840,7 @@ SBTarget::Launch (SBLaunchInfo &sb_launch_info, SBError& error)
         if (arch_spec.IsValid())
             launch_info.GetArchitecture () = arch_spec;
 
-        error.SetError (target_sp->Launch (target_sp->GetDebugger().GetListener(), launch_info, NULL));
+        error.SetError (target_sp->Launch (launch_info, NULL));
         sb_process.SetSP(target_sp->GetProcessSP());
     }
     else
@@ -1306,13 +1329,11 @@ SBTarget::ReadMemory (const SBAddress addr,
     if (target_sp)
     {
         Mutex::Locker api_locker (target_sp->GetAPIMutex());
-        lldb_private::Address addr_priv(addr.GetFileAddress(), NULL);
-        lldb_private::Error err_priv;    
-        bytes_read = target_sp->ReadMemory(addr_priv, false, buf, size, err_priv);
-        if(err_priv.Fail())
-        {
-            sb_error.SetError(err_priv.GetError(), err_priv.GetType());
-        }
+        bytes_read = target_sp->ReadMemory(addr.ref(), false, buf, size, sb_error.ref());
+    }
+    else
+    {
+        sb_error.SetErrorString("invalid target");
     }
 
     return bytes_read;

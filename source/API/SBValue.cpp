@@ -640,6 +640,32 @@ SBValue::GetSummary ()
     }
     return cstr;
 }
+
+const char *
+SBValue::GetSummary (lldb::SBStream& stream,
+                     lldb::SBTypeSummaryOptions& options)
+{
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    ValueLocker locker;
+    lldb::ValueObjectSP value_sp(GetSP(locker));
+    if (value_sp)
+    {
+        std::string buffer;
+        if (value_sp->GetSummaryAsCString(buffer,options.ref()) && !buffer.empty())
+            stream.Printf("%s",buffer.c_str());
+    }
+    const char* cstr = stream.GetData();
+    if (log)
+    {
+        if (cstr)
+            log->Printf ("SBValue(%p)::GetSummary() => \"%s\"",
+                         static_cast<void*>(value_sp.get()), cstr);
+        else
+            log->Printf ("SBValue(%p)::GetSummary() => NULL",
+                         static_cast<void*>(value_sp.get()));
+    }
+    return cstr;
+}
 #endif // LLDB_DISABLE_PYTHON
 
 const char *

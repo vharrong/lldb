@@ -565,8 +565,11 @@ def skipIfNoSBHeaders(func):
     def wrapper(*args, **kwargs):
         from unittest2 import case
         self = args[0]
+        if sys.platform.startswith("darwin"):
+            header = os.path.join(self.lib_dir, 'LLDB.framework', 'Versions','Current','Headers','LLDB.h')
+        else:
+            header = os.path.join(os.environ["LLDB_SRC"], "include", "lldb", "API", "LLDB.h")
         platform = sys.platform
-        header = os.path.join(os.environ["LLDB_SRC"], "include", "lldb", "API", "LLDB.h")
         if not os.path.exists(header):
             self.skipTest("skip because LLDB.h header not found")
         else:
@@ -999,6 +1002,8 @@ class Base(unittest2.TestCase):
             with recording(self, traceAlways) as sbuf:
                 print >> sbuf, "Adding tearDown hook:", getsource_if_available(hook)
             self.hooks.append(hook)
+        
+        return self
 
     def deletePexpectChild(self):
         # This is for the case of directly spawning 'lldb' and interacting with it
@@ -1017,10 +1022,9 @@ class Base(unittest2.TestCase):
             except (ValueError, pexpect.ExceptionPexpect):
                 # child is already terminated
                 pass
-	    finally:
-		# Give it one final blow to make sure the child is terminated.
-		self.child.close()
-
+            finally:
+                # Give it one final blow to make sure the child is terminated.
+                self.child.close()
 
     def tearDown(self):
         """Fixture for unittest test case teardown."""
@@ -1033,7 +1037,14 @@ class Base(unittest2.TestCase):
         for hook in reversed(self.hooks):
             with recording(self, traceAlways) as sbuf:
                 print >> sbuf, "Executing tearDown hook:", getsource_if_available(hook)
-            hook()
+            import inspect
+            hook_argc = len(inspect.getargspec(hook).args)
+            if hook_argc == 0 or getattr(hook,'im_self',None):
+                hook()
+            elif hook_argc == 1:
+                hook(self)
+            else:
+                hook() # try the plain call and hope it works
 
         del self.hooks
 
@@ -1193,14 +1204,6 @@ class Base(unittest2.TestCase):
         version = 'unknown'
 
         compiler = self.getCompiler()
-
-        # strip off leading spaces and prefixes (e.g. ccache, distcc, etc.)
-        compiler_split = compiler.split(" ")
-        for word in reversed(compiler_split) :
-            if which(word) != None :
-                compiler = word
-                break
-
         version_output = system([[which(compiler), "-v"]])[1]
         for line in version_output.split(os.linesep):
             m = re.search('version ([0-9\.]+)', line)
@@ -1621,6 +1624,51 @@ class TestBase(Base):
             else:
                 print "error: making remote directory '%s': %s" % (remote_test_dir, error)
     
+    def registerSharedLibrariesWithTarget(self, target, shlibs):
+        '''If we are remotely running the test suite, register the shared libraries with the target so they get uploaded, otherwise do nothing
+        
+        Any modules in the target that have their remote install file specification set will
+        get uploaded to the remote host. This function registers the local copies of the
+        shared libraries with the target and sets their remote install locations so they will
+        be uploaded when the target is run.
+        '''
+        environment = None
+        if lldb.remote_platform and shlibs:
+            dyld_environment_var = 'DYLD_FRAMEWORK_PATH' # TODO: localize this for remote systems other than darwin
+            shlib_prefix = "lib"
+            shlib_extension = ".dylib" # TODO: localize this for remote systems other than darwin
+
+            remote_working_dir = lldb.remote_platform.GetWorkingDirectory()
+            # TODO: localize this environment variable for systems other than darwin
+            environment = ['%s=%s' % (dyld_environment_var, remote_working_dir)]
+            # Add any shared libraries to our target if remote so they get
+            # uploaded into the working directory on the remote side
+            for name in shlibs:
+                # The path can be a full path to a shared library, or a make file name like "Foo" for
+                # "libFoo.dylib" or "libFoo.so", or "Foo.so" for "Foo.so" or "libFoo.so", or just a
+                # basename like "libFoo.so". So figure out which one it is and resolve the local copy
+                # of the shared library accordingly
+                if os.path.exists(name):
+                    local_shlib_path = name # name is the full path to the local shared library
+                else:
+                    # Check relative names
+                    local_shlib_path = os.path.join(os.getcwd(), shlib_prefix + name + shlib_extension)
+                    if not os.path.exists(local_shlib_path):
+                        local_shlib_path = os.path.join(os.getcwd(), name + shlib_extension)
+                        if not os.path.exists(local_shlib_path):
+                            local_shlib_path = os.path.join(os.getcwd(), name)
+
+                    # Make sure we found the local shared library in the above code
+                    self.assertTrue(os.path.exists(local_shlib_path))
+                
+                # Add the shared library to our target
+                shlib_module = target.AddModule(local_shlib_path, None, None, None)
+                # We must set the remote install location if we want the shared library
+                # to get uploaded to the remote target
+                remote_shlib_path = os.path.join(lldb.remote_platform.GetWorkingDirectory(), os.path.basename(local_shlib_path))
+                shlib_module.SetRemoteInstallFileSpec(lldb.SBFileSpec(remote_shlib_path, False))
+        environment
+        
     # utility methods that tests can use to access the current objects
     def target(self):
         if not self.dbg:
