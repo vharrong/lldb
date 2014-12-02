@@ -381,6 +381,11 @@ public:
         return m_event_handler_thread.IsJoinable();
     }
 
+    // This is for use in the command interpreter, when you either want the selected target, or if no target
+    // is present you want to prime the dummy target with entities that will be copied over to new targets.
+    Target *GetSelectedOrDummyTarget();
+    Target *GetDummyTarget();
+
 protected:
 
     friend class CommandInterpreter;
@@ -426,11 +431,16 @@ protected:
     {
         return m_source_file_cache;
     }
+
+    void
+    InstanceInitialize ();
+
     lldb::StreamFileSP m_input_file_sp;
     lldb::StreamFileSP m_output_file_sp;
     lldb::StreamFileSP m_error_file_sp;
     TerminalState m_terminal_state;
     TargetList m_target_list;
+
     PlatformList m_platform_list;
     Listener m_listener;
     std::unique_ptr<SourceManager> m_source_manager_ap;    // This is a scratch source manager that we return if we have no targets.
@@ -448,10 +458,17 @@ protected:
     LoadedPluginsList m_loaded_plugins;
     HostThread m_event_handler_thread;
     HostThread m_io_handler_thread;
+    Broadcaster m_sync_broadcaster;
     lldb::ListenerSP m_forward_listener_sp;
-    void
-    InstanceInitialize ();
-    
+
+    //----------------------------------------------------------------------
+    // Events for m_sync_broadcaster
+    //----------------------------------------------------------------------
+    enum
+    {
+        eBroadcastBitEventThreadIsListening   = (1 << 0),
+    };
+
 private:
 
     // Use Debugger::CreateInstance() to get a shared pointer to a new

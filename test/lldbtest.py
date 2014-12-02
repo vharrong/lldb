@@ -334,6 +334,23 @@ def python_api_test(func):
     wrapper.__python_api_test__ = True
     return wrapper
 
+def lldbmi_test(func):
+    """Decorate the item as a lldb-mi only test."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@lldbmi_test can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            if lldb.dont_do_lldbmi_test:
+                self.skipTest("lldb-mi tests")
+        except AttributeError:
+            pass
+        return func(self, *args, **kwargs)
+
+    # Mark this function as such to separate them from lldb command line tests.
+    wrapper.__lldbmi_test__ = True
+    return wrapper
+
 def benchmarks_test(func):
     """Decorate the item as a benchmarks test."""
     if isinstance(func, type) and issubclass(func, unittest2.TestCase):
@@ -670,6 +687,15 @@ def skipIfi386(func):
     return wrapper
 
 
+class _PlatformContext(object):
+    """Value object class which contains platform-specific options."""
+
+    def __init__(self, shlib_environment_var, shlib_prefix, shlib_extension):
+        self.shlib_environment_var = shlib_environment_var
+        self.shlib_prefix = shlib_prefix
+        self.shlib_extension = shlib_extension
+
+
 class Base(unittest2.TestCase):
     """
     Abstract base for performing lldb (see TestBase) or other generic tests (see
@@ -683,7 +709,7 @@ class Base(unittest2.TestCase):
 
     # Keep track of the old current working directory.
     oldcwd = None
-    
+
     @staticmethod
     def compute_mydir(test_file):
         '''Subclasses should call this function to correctly calculate the required "mydir" attribute as follows: 
@@ -716,6 +742,12 @@ class Base(unittest2.TestCase):
             if traceAlways:
                 print >> sys.stderr, "Change dir to:", os.path.join(os.environ["LLDB_TEST"], cls.mydir)
             os.chdir(os.path.join(os.environ["LLDB_TEST"], cls.mydir))
+
+        # Set platform context.
+        if sys.platform.startswith('darwin'):
+            cls.platformContext = _PlatformContext('DYLD_LIBRARY_PATH', 'lib', 'dylib')
+        elif sys.platform.startswith('linux') or sys.platform.startswith('freebsd'):
+            cls.platformContext = _PlatformContext('LD_LIBRARY_PATH', 'lib', 'so')
 
     @classmethod
     def tearDownClass(cls):
@@ -773,6 +805,11 @@ class Base(unittest2.TestCase):
             self.lldbExec = os.environ["LLDB_EXEC"]
         else:
             self.lldbExec = None
+        if "LLDBMI_EXEC" in os.environ:
+            self.lldbMiExec = os.environ["LLDBMI_EXEC"]
+        else:
+            self.lldbMiExec = None
+            self.dont_do_lldbmi_test = True
         if "LLDB_HERE" in os.environ:
             self.lldbHere = os.environ["LLDB_HERE"]
         else:
@@ -802,6 +839,19 @@ class Base(unittest2.TestCase):
                     pass
                 else:
                     self.skipTest("non python api test")
+        except AttributeError:
+            pass
+
+        # lldb-mi only test is decorated with @lldbmi_test,
+        # which also sets the "__lldbmi_test__" attribute of the
+        # function object to True.
+        try:
+            if lldb.just_do_lldbmi_test:
+                testMethod = getattr(self, self._testMethodName)
+                if getattr(testMethod, "__lldbmi_test__", False):
+                    pass
+                else:
+                    self.skipTest("non lldb-mi test")
         except AttributeError:
             pass
 
@@ -865,10 +915,7 @@ class Base(unittest2.TestCase):
         self.sys_stdout_hidden = False
 
         # set environment variable names for finding shared libraries
-        if sys.platform.startswith("darwin"):
-            self.dylibPath = 'DYLD_LIBRARY_PATH'
-        elif sys.platform.startswith("linux") or sys.platform.startswith("freebsd"):
-            self.dylibPath = 'LD_LIBRARY_PATH'
+        self.dylibPath = self.platformContext.shlib_environment_var
 
     def runHooks(self, child=None, child_prompt=None, use_cmd_api=False):
         """Perform the run hooks to bring lldb debugger to the desired state.
@@ -1196,6 +1243,10 @@ class Base(unittest2.TestCase):
         module = builder_module()
         return module.getCompiler()
 
+    def getCompilerBinary(self):
+        """Returns the compiler binary the test suite is running with."""
+        return self.getCompiler().split()[0]
+
     def getCompilerVersion(self):
         """ Returns a string that represents the compiler version.
             Supports: llvm, clang.
@@ -1203,7 +1254,7 @@ class Base(unittest2.TestCase):
         from lldbutil import which
         version = 'unknown'
 
-        compiler = self.getCompiler()
+        compiler = self.getCompilerBinary()
         version_output = system([[which(compiler), "-v"]])[1]
         for line in version_output.split(os.linesep):
             m = re.search('version ([0-9\.]+)', line)
@@ -1632,43 +1683,45 @@ class TestBase(Base):
         shared libraries with the target and sets their remote install locations so they will
         be uploaded when the target is run.
         '''
-        environment = None
-        if lldb.remote_platform and shlibs:
-            dyld_environment_var = 'DYLD_FRAMEWORK_PATH' # TODO: localize this for remote systems other than darwin
-            shlib_prefix = "lib"
-            shlib_extension = ".dylib" # TODO: localize this for remote systems other than darwin
+        if not shlibs:
+            return None
 
-            remote_working_dir = lldb.remote_platform.GetWorkingDirectory()
-            # TODO: localize this environment variable for systems other than darwin
-            environment = ['%s=%s' % (dyld_environment_var, remote_working_dir)]
-            # Add any shared libraries to our target if remote so they get
-            # uploaded into the working directory on the remote side
-            for name in shlibs:
-                # The path can be a full path to a shared library, or a make file name like "Foo" for
-                # "libFoo.dylib" or "libFoo.so", or "Foo.so" for "Foo.so" or "libFoo.so", or just a
-                # basename like "libFoo.so". So figure out which one it is and resolve the local copy
-                # of the shared library accordingly
-                if os.path.exists(name):
-                    local_shlib_path = name # name is the full path to the local shared library
-                else:
-                    # Check relative names
-                    local_shlib_path = os.path.join(os.getcwd(), shlib_prefix + name + shlib_extension)
+        shlib_environment_var = self.platformContext.shlib_environment_var
+        shlib_prefix = self.platformContext.shlib_prefix
+        shlib_extension = '.' + self.platformContext.shlib_extension
+
+        working_dir = self.get_process_working_directory()
+        environment = ['%s=%s' % (shlib_environment_var, working_dir)]
+        # Add any shared libraries to our target if remote so they get
+        # uploaded into the working directory on the remote side
+        for name in shlibs:
+            # The path can be a full path to a shared library, or a make file name like "Foo" for
+            # "libFoo.dylib" or "libFoo.so", or "Foo.so" for "Foo.so" or "libFoo.so", or just a
+            # basename like "libFoo.so". So figure out which one it is and resolve the local copy
+            # of the shared library accordingly
+            if os.path.exists(name):
+                local_shlib_path = name # name is the full path to the local shared library
+            else:
+                # Check relative names
+                local_shlib_path = os.path.join(os.getcwd(), shlib_prefix + name + shlib_extension)
+                if not os.path.exists(local_shlib_path):
+                    local_shlib_path = os.path.join(os.getcwd(), name + shlib_extension)
                     if not os.path.exists(local_shlib_path):
-                        local_shlib_path = os.path.join(os.getcwd(), name + shlib_extension)
-                        if not os.path.exists(local_shlib_path):
-                            local_shlib_path = os.path.join(os.getcwd(), name)
+                        local_shlib_path = os.path.join(os.getcwd(), name)
 
-                    # Make sure we found the local shared library in the above code
-                    self.assertTrue(os.path.exists(local_shlib_path))
-                
-                # Add the shared library to our target
-                shlib_module = target.AddModule(local_shlib_path, None, None, None)
+                # Make sure we found the local shared library in the above code
+                self.assertTrue(os.path.exists(local_shlib_path))
+
+            # Add the shared library to our target
+            shlib_module = target.AddModule(local_shlib_path, None, None, None)
+            if lldb.remote_platform:
                 # We must set the remote install location if we want the shared library
                 # to get uploaded to the remote target
                 remote_shlib_path = os.path.join(lldb.remote_platform.GetWorkingDirectory(), os.path.basename(local_shlib_path))
                 shlib_module.SetRemoteInstallFileSpec(lldb.SBFileSpec(remote_shlib_path, False))
-        environment
-        
+
+        return environment
+
     # utility methods that tests can use to access the current objects
     def target(self):
         if not self.dbg:

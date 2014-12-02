@@ -424,6 +424,7 @@ CommandInterpreter::LoadCommandDictionary ()
     m_command_dict["watchpoint"]= CommandObjectSP (new CommandObjectMultiwordWatchpoint (*this));
 
     const char *break_regexes[][2] = {{"^(.*[^[:space:]])[[:space:]]*:[[:space:]]*([[:digit:]]+)[[:space:]]*$", "breakpoint set --file '%1' --line %2"},
+                                      {"^/([^/]+)/$", "breakpoint set --source-pattern-regexp '%1'"},
                                       {"^([[:digit:]]+)[[:space:]]*$", "breakpoint set --line %1"},
                                       {"^\\*?(0x[[:xdigit:]]+)[[:space:]]*$", "breakpoint set --address %1"},
                                       {"^[\"']?([-+]?\\[.*\\])[\"']?[[:space:]]*$", "breakpoint set --name '%1'"},
@@ -1460,7 +1461,7 @@ CommandInterpreter::PreprocessCommand (std::string &command)
                 // Get a dummy target to allow for calculator mode while processing backticks.
                 // This also helps break the infinite loop caused when target is null.
                 if (!target)
-                    target = Host::GetDummyTarget(GetDebugger()).get();
+                    target = m_debugger.GetDummyTarget();
                 if (target)
                 {
                     ValueObjectSP expr_result_valobj_sp;
