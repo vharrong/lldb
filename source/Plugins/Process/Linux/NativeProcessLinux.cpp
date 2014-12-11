@@ -289,26 +289,29 @@ namespace
         else
             result = ptrace(static_cast<__ptrace_request>(req), static_cast< ::pid_t>(pid), addr, data);
 
+        // Logging may change errno - so, need to preserve original errno value here.
+        const auto ptrace_errno = errno;
         if (log)
             log->Printf("ptrace(%s, %" PRIu64 ", %p, %p, %zu)=%lX called from file %s line %d",
                     reqName, pid, addr, data, data_size, result, file, line);
 
         PtraceDisplayBytes(req, data, data_size);
 
-        if (log && errno != 0)
+        if (log && ptrace_errno != 0)
         {
             const char* str;
-            switch (errno)
+            switch (ptrace_errno)
             {
             case ESRCH:  str = "ESRCH"; break;
             case EINVAL: str = "EINVAL"; break;
             case EBUSY:  str = "EBUSY"; break;
             case EPERM:  str = "EPERM"; break;
-            default:     str = "<unknown>";
+            default:     str = strerror(ptrace_errno);
             }
-            log->Printf("ptrace() failed; errno=%d (%s)", errno, str);
+            log->Printf("ptrace() failed; errno=%d (%s)", ptrace_errno, str);
         }
 
+        errno = ptrace_errno;  // restore errno to the ptrace result.
         return result;
     }
 
