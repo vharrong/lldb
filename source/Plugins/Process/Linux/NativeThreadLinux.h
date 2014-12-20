@@ -73,8 +73,14 @@ namespace lldb_private
         void
         SetStoppedByBreakpoint ();
 
+        void
+        SetStoppedByWatchpoint ();
+
         bool
         IsStoppedAtBreakpoint ();
+
+        bool
+        IsStoppedAtWatchpoint ();
 
         void
         SetStoppedByTrace ();

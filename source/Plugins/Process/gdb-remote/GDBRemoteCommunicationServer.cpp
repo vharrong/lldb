@@ -276,6 +276,10 @@ GDBRemoteCommunicationServer::GetPacketAndSendResponse (uint32_t timeout_usec,
             packet_result = Handle_qPlatform_shell (packet);
             break;
 
+        case StringExtractorGDBRemote::eServerPacketType_qWatchpointSupportInfo:
+            packet_result = Handle_qWatchpointSupportInfo (packet);
+            break;
+
         case StringExtractorGDBRemote::eServerPacketType_C:
             packet_result = Handle_C (packet);
             break;
@@ -3738,8 +3742,9 @@ GDBRemoteCommunicationServer::Handle_Z (StringExtractorGDBRemote &packet)
     {
         case '0': want_hardware = false; want_breakpoint = true;  break;
         case '1': want_hardware = true;  want_breakpoint = true;  break;
-        case '2': want_breakpoint = false; break;
-        case '3': want_breakpoint = false; break;
+        case '2': want_hardware = true;  want_breakpoint = false; break;
+        case '3': want_hardware = true;  want_breakpoint = false; break;
+        case '4': want_hardware = true;  want_breakpoint = false; break;
         default:
             return SendIllFormedResponse(packet, "Z packet had invalid software/hardware specifier");
 
@@ -3747,10 +3752,6 @@ GDBRemoteCommunicationServer::Handle_Z (StringExtractorGDBRemote &packet)
 
     if ((packet.GetBytesLeft() < 1) || packet.GetChar () != ',')
         return SendIllFormedResponse(packet, "Malformed Z packet, expecting comma after breakpoint type");
-
-    // FIXME implement watchpoint support.
-    if (!want_breakpoint)
-        return SendUnimplementedResponse ("watchpoint support not yet implemented");
 
     // Parse out the breakpoint address.
     if (packet.GetBytesLeft() < 1)
@@ -3771,16 +3772,33 @@ GDBRemoteCommunicationServer::Handle_Z (StringExtractorGDBRemote &packet)
         const Error error = m_debugged_process_sp->SetBreakpoint (breakpoint_addr, kind, want_hardware);
         if (error.Success ())
             return SendOKResponse ();
-        else
-        {
-            if (log)
-                log->Printf ("GDBRemoteCommunicationServer::%s pid %" PRIu64 " failed to set breakpoint: %s", __FUNCTION__, m_debugged_process_sp->GetID (), error.AsCString ());
-            return SendErrorResponse (0x09);
-        }
+        if (log)
+            log->Printf ("GDBRemoteCommunicationServer::%s pid %" PRIu64 " failed to set breakpoint: %s", __FUNCTION__, m_debugged_process_sp->GetID (), error.AsCString ());
+        return SendErrorResponse (0x09);
     }
+    else
+    {
+        uint32_t watch_flags = 0x0;
+        switch (breakpoint_type_char)
+        {
+            case '2': watch_flags = 0x1; break; // WRITE
+            case '3': watch_flags = 0x3; break; // READ
+            case '4': watch_flags = 0x3; break; // READ_WRITE
+        }
 
-    // FIXME fix up after watchpoints are handled.
-    return SendUnimplementedResponse ("");
+        // Try to set the watchpoint.
+        const Error error = m_debugged_process_sp->SetWatchpoint (
+                breakpoint_addr, kind, watch_flags, want_hardware);
+        if (error.Success ())
+            return SendOKResponse ();
+        if (log)
+            log->Printf ("GDBRemoteCommunicationServer::%s pid %"
+                    PRIu64 " failed to set watchpoint: %s",
+                    __FUNCTION__,
+                    m_debugged_process_sp->GetID (),
+                    error.AsCString ());
+        return SendErrorResponse (0x09);
+    }
 }
 
 GDBRemoteCommunicationServer::PacketResult
@@ -3822,10 +3840,6 @@ GDBRemoteCommunicationServer::Handle_z (StringExtractorGDBRemote &packet)
     if ((packet.GetBytesLeft() < 1) || packet.GetChar () != ',')
         return SendIllFormedResponse(packet, "Malformed z packet, expecting comma after breakpoint type");
 
-    // FIXME implement watchpoint support.
-    if (!want_breakpoint)
-        return SendUnimplementedResponse ("watchpoint support not yet implemented");
-
     // Parse out the breakpoint address.
     if (packet.GetBytesLeft() < 1)
         return SendIllFormedResponse(packet, "Too short z packet, missing address");
@@ -3852,9 +3866,21 @@ GDBRemoteCommunicationServer::Handle_z (StringExtractorGDBRemote &packet)
             return SendErrorResponse (0x09);
         }
     }
-
-    // FIXME fix up after watchpoints are handled.
-    return SendUnimplementedResponse ("");
+    else
+    {
+        // Try to clear the watchpoint.
+        const Error error = m_debugged_process_sp->RemoveWatchpoint (
+                breakpoint_addr);
+        if (error.Success ())
+            return SendOKResponse ();
+        if (log)
+            log->Printf ("GDBRemoteCommunicationServer::%s pid %"
+                    PRIu64 " failed to remove watchpoint: %s",
+                    __FUNCTION__,
+                    m_debugged_process_sp->GetID (),
+                    error.AsCString ());
+        return SendErrorResponse (0x09);
+    }
 }
 
 GDBRemoteCommunicationServer::PacketResult
@@ -4288,6 +4314,30 @@ GDBRemoteCommunicationServer::Handle_qThreadStopInfo (StringExtractorGDBRemote &
         return SendErrorResponse (0x15);
     }
     return SendStopReplyPacketForThread (tid);
+}
+
+GDBRemoteCommunicationServer::PacketResult
+GDBRemoteCommunicationServer::Handle_qWatchpointSupportInfo (StringExtractorGDBRemote &packet)
+{
+    // Only the gdb server handles this.
+    if (!IsGdbServer ())
+        return SendUnimplementedResponse (packet.GetStringRef ().c_str ());
+
+    // Fail if we don't have a current process.
+    if (!m_debugged_process_sp ||
+            m_debugged_process_sp->GetID () == LLDB_INVALID_PROCESS_ID)
+        return SendErrorResponse (68);
+
+    packet.SetFilePos(strlen("qWatchpointSupportInfo"));
+    if (packet.GetBytesLeft() == 0)
+        return SendOKResponse();
+    if (packet.GetChar() != ':')
+        return SendErrorResponse(67);
+
+    uint32_t num = m_debugged_process_sp->GetMaxWatchpoints();
+    StreamGDBRemote response;
+    response.Printf ("num:%d;", num);
+    return SendPacketNoLock(response.GetData(), response.GetSize());
 }
 
 void

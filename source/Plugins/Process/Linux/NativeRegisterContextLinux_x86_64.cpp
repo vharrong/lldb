@@ -311,6 +311,28 @@ namespace
         { "Floating Point Registers",   "fpu", k_num_fpr_registers_x86_64, g_fpu_regnums_x86_64 },
         { "Advanced Vector Extensions", "avx", k_num_avx_registers_x86_64, g_avx_regnums_x86_64 }
     };
+
+    inline Error WatchpointIndexError ()
+    {
+        Error error ("Watchpoint index out of range");
+        error.SetErrorToGenericError ();
+        return error;
+    }
+
+    inline Error WatchpointReadWriteBitsError ()
+    {
+
+        Error error ("Invalid read/write bits for watchpoint");
+        error.SetErrorToGenericError ();
+        return error;
+    }
+
+    inline Error WatchpointSizeError ()
+    {
+        Error error ("Invalid size for watchpoint");
+        error.SetErrorToGenericError ();
+        return error;
+    }
 }
 
 #define REG_CONTEXT_SIZE (GetRegisterInfoInterface ().GetGPRSize () + sizeof(FPR))
@@ -1038,3 +1060,148 @@ NativeRegisterContextLinux_x86_64::WriteGPR()
     return process_p->WriteGPR (m_thread.GetID (), &m_gpr_x86_64, GetRegisterInfoInterface ().GetGPRSize ());
 }
 
+Error
+NativeRegisterContextLinux_x86_64::IsWatchpointHit(uint8_t wp_index)
+{
+    if (wp_index >= NumSupportedHardwareWatchpoints())
+        return WatchpointIndexError ();
+
+    RegisterValue reg_value;
+    Error error = ReadRegisterRaw(lldb_dr6_x86_64, reg_value);
+    if (error.Fail()) return error;
+
+    uint64_t status_bits = reg_value.GetAsUInt64();
+
+    bool is_hit = status_bits & (1 << wp_index);
+
+    error.SetError (!is_hit, lldb::eErrorTypeInvalid);
+
+    return error;
+}
+
+Error
+NativeRegisterContextLinux_x86_64::IsWatchpointVacant(uint32_t wp_index)
+{
+    if (wp_index >= NumSupportedHardwareWatchpoints())
+        return WatchpointIndexError ();
+
+    RegisterValue reg_value;
+    Error error = ReadRegisterRaw(lldb_dr7_x86_64, reg_value);
+    if (error.Fail()) return error;
+
+    uint64_t control_bits = reg_value.GetAsUInt64();
+
+    bool is_vacant = !(control_bits & (1 << (wp_index << 1)));
+
+    error.SetError (!is_vacant, lldb::eErrorTypeInvalid);
+
+    return error;
+}
+
+Error
+NativeRegisterContextLinux_x86_64::SetHardwareWatchpointWithIndex(
+        lldb::addr_t addr, size_t size, uint32_t watch_flags, uint32_t wp_index) {
+
+    if (wp_index >= NumSupportedHardwareWatchpoints())
+        return WatchpointIndexError ();
+
+    if (watch_flags != 0x1 && watch_flags != 0x3)
+        return WatchpointReadWriteBitsError ();
+
+    if (size != 1 && size != 2 && size != 4 && size != 8)
+        return WatchpointSizeError ();
+
+    Error error = IsWatchpointVacant (wp_index);
+    if (error.Fail()) return error;
+
+    RegisterValue reg_value;
+    error = ReadRegisterRaw(lldb_dr7_x86_64, reg_value);
+    if (error.Fail()) return error;
+
+    uint64_t control_bits = reg_value.GetAsUInt64();
+
+    // for watchpoints 0, 1, 2, or 3 respectively,
+    // bits 1, 3, 5, or 7
+    uint64_t enable_bit = 1 << (wp_index << 1);
+
+    // bits 16-17, 20-21, 24-25, or 28-29
+    // with 0b01 for write, and 0b11 for read/write
+    uint64_t rw_bits = watch_flags << 16 << (wp_index << 1);
+
+    // bits 18-19, 22-23, 26-27, or 30-31
+    // with 0b00, 0b01, 0b10, 0b11
+    // for 1, 2, 8 (if supported), 4 bytes, respectively
+    uint64_t size_bits = (size == 8 ? 0x2 : size - 1) << 18 << (wp_index << 1);
+
+    uint64_t bit_mask = (0x3 | (0xF << 16)) << (wp_index << 1);
+
+    control_bits &= ~bit_mask;
+
+    control_bits |= enable_bit | rw_bits | size_bits;
+
+    error = WriteRegister(m_reg_info.first_dr + wp_index, RegisterValue(addr));
+    if (error.Fail()) return error;
+
+    error = WriteRegister(lldb_dr7_x86_64, RegisterValue(control_bits));
+    if (error.Fail()) return error;
+
+    error.Clear();
+    return error;
+}
+
+bool
+NativeRegisterContextLinux_x86_64::ClearHardwareWatchpoint(uint32_t wp_index)
+{
+    if (wp_index >= NumSupportedHardwareWatchpoints())
+        return false;
+
+    RegisterValue reg_value;
+    Error error = ReadRegisterRaw(lldb_dr7_x86_64, reg_value);
+    if (error.Fail()) return false;
+
+    uint64_t control_bits = reg_value.GetAsUInt64();
+
+    // for watchpoints 0, 1, 2, or 3, respectively
+    // bits {0-1,16-19}, {2-3,20-23}, {4-5,24-27}, or {6-7,28-31}
+    uint64_t bit_mask = (0x3 | (0xF << 16)) << (wp_index << 1);
+
+    control_bits &= ~bit_mask;
+
+    error = WriteRegister(lldb_dr7_x86_64, RegisterValue(control_bits));
+    if (error.Fail()) return false;
+
+    return true;
+}
+
+uint32_t
+NativeRegisterContextLinux_x86_64::SetHardwareWatchpoint(
+        lldb::addr_t addr, size_t size, uint32_t watch_flags)
+{
+    const uint32_t num_hw_watchpoints = NumSupportedHardwareWatchpoints();
+    for (uint32_t wp_index = 0; wp_index < num_hw_watchpoints; ++wp_index)
+        if (IsWatchpointVacant(wp_index).Success())
+        {
+            if (SetHardwareWatchpointWithIndex(addr, size, watch_flags, wp_index).Fail())
+                continue;
+            return wp_index;
+        }
+    return LLDB_INVALID_INDEX32;
+}
+
+lldb::addr_t
+NativeRegisterContextLinux_x86_64::GetWatchpointAddress(uint32_t wp_index)
+{
+    if (wp_index >= NumSupportedHardwareWatchpoints())
+        return LLDB_INVALID_ADDRESS;
+    RegisterValue reg_value;
+    if (ReadRegisterRaw(m_reg_info.first_dr + wp_index, reg_value).Fail())
+        return LLDB_INVALID_ADDRESS;
+    return reg_value.GetAsUInt64();
+}
+
+uint32_t
+NativeRegisterContextLinux_x86_64::NumSupportedHardwareWatchpoints ()
+{
+    // Available debug address registers: dr0, dr1, dr2, dr3
+    return 4;
+}
