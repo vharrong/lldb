@@ -98,6 +98,7 @@ namespace lldb_private
         // already think it is stopped.
         void
         NotifyThreadStop (lldb::tid_t tid,
+                          const ThreadIDFunction &request_thread_resume_function,
                           const ErrorFunction &error_function);
 
         // Request that the given thread id should have the request_thread_resume_function
@@ -160,7 +161,18 @@ namespace lldb_private
 
         typedef std::queue<EventBaseSP> QueueType;
 
-        typedef std::unordered_map<lldb::tid_t, bool> TIDBoolMap;
+        enum class ThreadState
+        {
+            Running,
+            Stopped
+        };
+
+        struct ThreadContext
+        {
+            ThreadState m_state;
+            bool m_stop_requested = false;
+        };
+        typedef std::unordered_map<lldb::tid_t, ThreadContext> TIDContextMap;
 
 
         // Private member functions.
@@ -174,7 +186,7 @@ namespace lldb_private
         SetPendingNotification (const EventBaseSP &event_sp);
 
         void
-        ThreadDidStop (lldb::tid_t tid, ErrorFunction &error_function);
+        ThreadDidStop (lldb::tid_t tid, ThreadIDFunction &request_thread_resume_function, ErrorFunction &error_function);
 
         void
         ThreadWasCreated (lldb::tid_t tid, bool is_stopped, ErrorFunction &error_function);
@@ -184,6 +196,9 @@ namespace lldb_private
 
         void
         ResetNow ();
+
+        bool
+        IsKnownThread(lldb::tid_t tid) const;
 
         void
         Log (const char *format, ...);
@@ -204,8 +219,8 @@ namespace lldb_private
 
         EventBaseSP m_pending_notification_sp;
 
-        // Maps known TIDs to stop (true) or not-stopped (false) state.
-        TIDBoolMap m_tid_stop_map;
+        // Maps known TIDs to ThreadContext.
+        TIDContextMap m_tid_map;
 
         bool m_log_event_processing;
     };

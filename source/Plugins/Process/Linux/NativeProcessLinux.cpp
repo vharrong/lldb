@@ -166,7 +166,7 @@ namespace
     {
         Log *const log = GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD);
         if (log)
-            log->Printf ("NativePlatformLinux::%s %s", __FUNCTION__, error_message.c_str ());
+            log->Printf ("NativeProcessLinux::%s %s", __FUNCTION__, error_message.c_str ());
         assert (false && "ThreadStateCoordinator error reported");
     }
 
@@ -2028,7 +2028,7 @@ NativeProcessLinux::MonitorCallback(void *callback_baton,
     if (exited)
     {
         if (log)
-            log->Printf ("NativeProcessLinux::%s() got exit signal, tid = %"  PRIu64 " (%s main thread)", __FUNCTION__, pid, is_main_thread ? "is" : "is not");
+            log->Printf ("NativeProcessLinux::%s() got exit signal(%d) , tid = %"  PRIu64 " (%s main thread)", __FUNCTION__, signal, pid, is_main_thread ? "is" : "is not");
 
         // This is a thread that exited.  Ensure we're not tracking it anymore.
         const bool thread_found = process->StopTrackingThread (pid);
@@ -2539,8 +2539,15 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
                 // An inferior thread just stopped, but was not the primary cause of the process stop.
                 // Instead, something else (like a breakpoint or step) caused the stop.  Mark the
                 // stop signal as 0 to let lldb know this isn't the important stop.
-                reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (0);
+                linux_thread_p->SetStoppedBySignal (0);
                 SetCurrentThreadID (thread_sp->GetID ());
+                m_coordinator_up->NotifyThreadStop (thread_sp->GetID(),
+                                                    [=](lldb::tid_t tid_to_resume)
+                                                    {
+                                                        linux_thread_p->SetRunning ();
+                                                        Resume (tid_to_resume, LLDB_INVALID_SIGNAL_NUMBER);
+                                                    },
+                                                    CoordinatorErrorHandler);
             }
             else
             {
@@ -2561,10 +2568,9 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
                                  stop_signo,
                                  signal_name);
                 }
+                // Tell the thread state coordinator about the stop.
+                NotifyThreadStop (thread_sp->GetID ());
             }
-
-            // Tell the thread state coordinator about the stop.
-            NotifyThreadStop (thread_sp->GetID ());
         }
 
         // Done handling.
@@ -2574,55 +2580,13 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
     if (log)
         log->Printf ("NativeProcessLinux::%s() received signal %s", __FUNCTION__, GetUnixSignals ().GetSignalAsCString (signo));
 
+    // This thread is stopped.
+    NotifyThreadStop (pid);
+
     switch (signo)
     {
-    case SIGSEGV:
-    case SIGABRT:
-    case SIGILL:
-    case SIGFPE:
-    case SIGBUS:
-    default:
-        {
-            // This thread is stopped.
-            NotifyThreadStop (pid);
-
-            // lldb::addr_t fault_addr = reinterpret_cast<lldb::addr_t>(info->si_addr);
-
-            // This is just a pre-signal-delivery notification of the incoming signal.
-            if (thread_sp)
-                reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (signo);
-
-            // We can get more details on the exact nature of the crash here.
-            // ProcessMessage::CrashReason reason = GetCrashReasonForSIGSEGV(info);
-            if (!exited)
-            {
-                // Send a stop to the debugger after we get all other threads to stop.
-                CallAfterRunningThreadsStop (pid,
-                                             [=] (lldb::tid_t signaling_tid)
-                                             {
-                                                 SetCurrentThreadID (signaling_tid);
-                                                 SetState (StateType::eStateStopped, true);
-                                             });
-            }
-            else
-            {
-                // FIXME the process might die right after this - might not ever get stops on any other threads.
-                // Send a stop to the debugger after we get all other threads to stop.
-                CallAfterRunningThreadsStop (pid,
-                                             [=] (lldb::tid_t signaling_tid)
-                                             {
-                                                 SetCurrentThreadID (signaling_tid);
-                                                 SetState (StateType::eStateCrashed, true);
-                                             });
-            }
-        }
-        break;
-
     case SIGSTOP:
         {
-            // This thread is stopped.
-            NotifyThreadStop (pid);
-
             if (log)
             {
                 if (is_from_llgs)
@@ -2641,18 +2605,31 @@ NativeProcessLinux::MonitorSignal(const siginfo_t *info, lldb::pid_t pid, bool e
                                                        Resume (tid_to_resume, signo);
                                                    },
                                                    CoordinatorErrorHandler);
-
-            // And now we want to signal that we received a SIGSTOP on this thread
-            // as soon as all running threads stop (i.e. the group stop sequence completes).
-            CallAfterRunningThreadsStop (pid,
-                                         [=] (lldb::tid_t signaling_tid)
-                                         {
-                                             SetCurrentThreadID (signaling_tid);
-                                             SetState (StateType::eStateStopped, true);
-                                         });
         }
         break;
+    case SIGSEGV:
+    case SIGILL:
+    case SIGFPE:
+    case SIGBUS:
+        if (thread_sp)
+            reinterpret_cast<NativeThreadLinux*>(thread_sp.get())->SetCrashedWithException(
+                signo, reinterpret_cast<lldb::addr_t>(info->si_addr));
+        break;
+    default:
+        // This is just a pre-signal-delivery notification of the incoming signal.
+        if (thread_sp)
+            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStoppedBySignal (signo);
+
+        break;
     }
+
+    // Send a stop to the debugger after we get all other threads to stop.
+    CallAfterRunningThreadsStop (pid,
+                                 [=] (lldb::tid_t signaling_tid)
+                                 {
+                                     SetCurrentThreadID (signaling_tid);
+                                     SetState (StateType::eStateStopped, true);
+                                 });
 }
 
 Error
@@ -3599,7 +3576,7 @@ NativeProcessLinux::Resume (lldb::tid_t tid, uint32_t signo)
     ResumeOperation op (tid, signo, result);
     DoOperation (&op);
     if (log)
-        log->Printf ("NativeProcessLinux::%s() resuming result = %s", __FUNCTION__, result ? "true" : "false");
+        log->Printf ("NativeProcessLinux::%s() resuming thread = %"  PRIu64 " result = %s", __FUNCTION__, tid, result ? "true" : "false");
     return result;
 }
 
@@ -3983,18 +3960,22 @@ NativeProcessLinux::NotifyThreadDeath (lldb::tid_t tid)
 void
 NativeProcessLinux::NotifyThreadStop (lldb::tid_t tid)
 {
-    m_coordinator_up->NotifyThreadStop (tid, CoordinatorErrorHandler);
+    m_coordinator_up->NotifyThreadStop (tid, ThreadStateCoordinator::ThreadIDFunction(), CoordinatorErrorHandler);
 }
 
 void
 NativeProcessLinux::CallAfterRunningThreadsStop (lldb::tid_t tid,
                                                  const std::function<void (lldb::tid_t tid)> &call_after_function)
 {
+    Log *const log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+    if (log)
+        log->Printf("NativeProcessLinux::%s tid %" PRIu64, __FUNCTION__, tid);
+
     const lldb::pid_t pid = GetID ();
     m_coordinator_up->CallAfterRunningThreadsStop (tid,
                                                    [=](lldb::tid_t request_stop_tid)
                                                    {
-                                                       tgkill (pid, request_stop_tid, SIGSTOP);
+                                                       RequestThreadStop(pid, request_stop_tid);
                                                    },
                                                    call_after_function,
                                                    CoordinatorErrorHandler);
@@ -4005,13 +3986,36 @@ NativeProcessLinux::CallAfterRunningThreadsStopWithSkipTID (lldb::tid_t deferred
                                                             lldb::tid_t skip_stop_request_tid,
                                                             const std::function<void (lldb::tid_t tid)> &call_after_function)
 {
+    Log *const log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+    if (log)
+        log->Printf("NativeProcessLinux::%s deferred_signal_tid %" PRIu64 ", skip_stop_request_tid %" PRIu64, __FUNCTION__, deferred_signal_tid, skip_stop_request_tid);
+
     const lldb::pid_t pid = GetID ();
     m_coordinator_up->CallAfterRunningThreadsStopWithSkipTIDs (deferred_signal_tid,
                                                                skip_stop_request_tid != LLDB_INVALID_THREAD_ID ? ThreadStateCoordinator::ThreadIDSet {skip_stop_request_tid} : ThreadStateCoordinator::ThreadIDSet (),
                                                                [=](lldb::tid_t request_stop_tid)
                                                                {
-                                                                   tgkill (pid, request_stop_tid, SIGSTOP);
+                                                                   RequestThreadStop(pid, request_stop_tid);
                                                                },
                                                                call_after_function,
                                                                CoordinatorErrorHandler);
+}
+
+lldb_private::Error
+NativeProcessLinux::RequestThreadStop (const lldb::pid_t pid, const lldb::tid_t tid)
+{
+    Log* log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+    if (log)
+        log->Printf ("NativeProcessLinux::%s requesting thread stop(pid: %" PRIu64 ", tid: %" PRIu64 ")", __FUNCTION__, pid, tid);
+
+    Error err;
+    errno = 0;
+    if (::tgkill (pid, tid, SIGSTOP) != 0)
+    {
+        err.SetErrorToErrno ();
+        if (log)
+            log->Printf ("NativeProcessLinux::%s tgkill(%" PRIu64 ", %" PRIu64 ", SIGSTOP) failed: %s", __FUNCTION__, pid, tid, err.AsCString ());
+    }
+
+    return err;
 }
