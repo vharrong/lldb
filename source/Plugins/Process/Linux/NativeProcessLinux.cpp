@@ -2692,8 +2692,11 @@ NativeProcessLinux::Resume (const ResumeActionList &resume_actions)
                                                        [=](lldb::tid_t tid_to_step)
                                                        {
                                                            reinterpret_cast<NativeThreadLinux*> (thread_sp.get ())->SetStepping ();
-                                                           auto step_result = SingleStep (tid_to_step,(signo > 0) ? signo : LLDB_INVALID_SIGNAL_NUMBER);
-                                                           assert (step_result && "SingleStep() failed");
+                                                           if (m_coordinator_up->RequestThreadStop (tid_to_step))
+                                                           {
+                                                               auto step_result = SingleStep (tid_to_step,(signo > 0) ? signo : LLDB_INVALID_SIGNAL_NUMBER);
+                                                               assert (step_result && "SingleStep() failed");
+                                                           }
                                                        },
                                                        CoordinatorErrorHandler);
 

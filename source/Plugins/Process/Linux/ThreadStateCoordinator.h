@@ -119,6 +119,10 @@ namespace lldb_private
                                      const ThreadIDFunction &request_thread_resume_function,
                                      const ErrorFunction &error_function);
 
+        // Mark a thread as anticipating delivery of SIGSTOP signal.
+        bool
+        RequestThreadStop (lldb::tid_t tid);
+
         // Indicate the calling process did an exec and that the thread state
         // should be 100% cleared.
         //

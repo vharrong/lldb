@@ -912,3 +912,20 @@ ThreadStateCoordinator::IsKnownThread (lldb::tid_t tid) const
 {
     return m_tid_map.find (tid) != m_tid_map.end ();
 }
+
+bool
+ThreadStateCoordinator::RequestThreadStop (lldb::tid_t tid)
+{
+    // Ensure we know about the thread.
+    auto find_it = m_tid_map.find (tid);
+    if (find_it == m_tid_map.end ())
+    {
+        Log ("ThreadStateCoordinator::%s failed to find tid %" PRIu64, __FUNCTION__, tid);
+        return false;
+    }
+
+    auto& context = find_it->second;
+    context.m_stop_requested = true;
+
+    return true;
+}
