@@ -38,6 +38,7 @@ namespace lldb_private
         typedef std::function<void (lldb::tid_t tid)> ThreadIDFunction;
         typedef std::function<void (const char *format, va_list args)> LogFunction;
         typedef std::function<void (const std::string &error_message)> ErrorFunction;
+        typedef std::function<void (lldb::tid_t tid, bool supress_signal)> ResumeThreadFunction;
 
         // Constructors.
         ThreadStateCoordinator (const LogFunction &log_function);
@@ -98,7 +99,7 @@ namespace lldb_private
         // already think it is stopped.
         void
         NotifyThreadStop (lldb::tid_t tid,
-                          const ThreadIDFunction &request_thread_resume_function,
+                          bool initiated_by_llgs,
                           const ErrorFunction &error_function);
 
         // Request that the given thread id should have the request_thread_resume_function
@@ -107,7 +108,7 @@ namespace lldb_private
         // a thread that is already in a running state.
         void
         RequestThreadResume (lldb::tid_t tid,
-                             const ThreadIDFunction &request_thread_resume_function,
+                             const ResumeThreadFunction &request_thread_resume_function,
                              const ErrorFunction &error_function);
 
         // Request that the given thread id should have the request_thread_resume_function
@@ -116,12 +117,8 @@ namespace lldb_private
         // does not trigger an error in that case.
         void
         RequestThreadResumeAsNeeded (lldb::tid_t tid,
-                                     const ThreadIDFunction &request_thread_resume_function,
+                                     const ResumeThreadFunction &request_thread_resume_function,
                                      const ErrorFunction &error_function);
-
-        // Mark a thread as anticipating delivery of SIGSTOP signal.
-        bool
-        RequestThreadStop (lldb::tid_t tid);
 
         // Indicate the calling process did an exec and that the thread state
         // should be 100% cleared.
@@ -175,6 +172,7 @@ namespace lldb_private
         {
             ThreadState m_state;
             bool m_stop_requested = false;
+            ResumeThreadFunction m_request_resume_function;
         };
         typedef std::unordered_map<lldb::tid_t, ThreadContext> TIDContextMap;
 
@@ -190,7 +188,7 @@ namespace lldb_private
         SetPendingNotification (const EventBaseSP &event_sp);
 
         void
-        ThreadDidStop (lldb::tid_t tid, ThreadIDFunction &request_thread_resume_function, ErrorFunction &error_function);
+        ThreadDidStop (lldb::tid_t tid, bool initiated_by_llgs, ErrorFunction &error_function);
 
         void
         ThreadWasCreated (lldb::tid_t tid, bool is_stopped, ErrorFunction &error_function);

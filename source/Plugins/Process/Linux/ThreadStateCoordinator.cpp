@@ -356,11 +356,11 @@ class ThreadStateCoordinator::EventThreadStopped : public ThreadStateCoordinator
 {
 public:
     EventThreadStopped (lldb::tid_t tid,
-                        const ThreadIDFunction & request_thread_resume_function,
+                        bool initiated_by_llgs,
                         const ErrorFunction &error_function):
     EventBase (),
     m_tid (tid),
-    m_request_thread_resume_function(request_thread_resume_function),
+    m_initiated_by_llgs (initiated_by_llgs),
     m_error_function (error_function)
     {
     }
@@ -368,7 +368,7 @@ public:
     EventLoopResult
     ProcessEvent(ThreadStateCoordinator &coordinator) override
     {
-        coordinator.ThreadDidStop (m_tid, m_request_thread_resume_function, m_error_function);
+        coordinator.ThreadDidStop (m_tid, m_initiated_by_llgs, m_error_function);
         return eventLoopResultContinue;
     }
 
@@ -383,7 +383,7 @@ public:
 private:
 
     const lldb::tid_t m_tid;
-    ThreadIDFunction m_request_thread_resume_function;
+    const bool m_initiated_by_llgs;
     ErrorFunction m_error_function;
 };
 
@@ -464,7 +464,7 @@ class ThreadStateCoordinator::EventRequestResume : public ThreadStateCoordinator
 {
 public:
     EventRequestResume (lldb::tid_t tid,
-                        const ThreadIDFunction &request_thread_resume_function,
+                        const ResumeThreadFunction &request_thread_resume_function,
                         const ErrorFunction &error_function,
                         bool error_when_already_running):
     EventBase (),
@@ -488,9 +488,9 @@ public:
             m_error_function (error_message.str ());
             return eventLoopResultContinue;
         }
-        
+        auto& context = find_it->second;
         // Tell the thread to resume if we don't already think it is running.
-        const bool is_stopped = find_it->second.m_state == ThreadState::Stopped;
+        const bool is_stopped = context.m_state == ThreadState::Stopped;
         if (!is_stopped)
         {
             // It's not an error, just a log, if the m_already_running_no_error flag is set.
@@ -543,10 +543,11 @@ public:
 
         // Request a resume.  We expect this to be synchronous and the system
         // to reflect it is running after this completes.
-        m_request_thread_resume_function (m_tid);
+        m_request_thread_resume_function (m_tid, false);
 
         // Now mark it is running.
-        find_it->second.m_state = ThreadState::Running;
+        context.m_state = ThreadState::Running;
+        context.m_request_resume_function = m_request_thread_resume_function;
 
         return eventLoopResultContinue;
     }
@@ -562,7 +563,7 @@ public:
 private:
 
     const lldb::tid_t m_tid;
-    ThreadIDFunction m_request_thread_resume_function;
+    ResumeThreadFunction m_request_thread_resume_function;
     ErrorFunction m_error_function;
     const bool m_error_when_already_running;
 };
@@ -671,7 +672,7 @@ ThreadStateCoordinator::CallAfterRunningThreadsStopWithSkipTIDs (lldb::tid_t tri
 
 
 void
-ThreadStateCoordinator::ThreadDidStop (lldb::tid_t tid, ThreadIDFunction &request_thread_resume_function, ErrorFunction &error_function)
+ThreadStateCoordinator::ThreadDidStop (lldb::tid_t tid, bool initiated_by_llgs, ErrorFunction &error_function)
 {
     // Ensure we know about the thread.
     auto find_it = m_tid_map.find (tid);
@@ -702,12 +703,12 @@ ThreadStateCoordinator::ThreadDidStop (lldb::tid_t tid, ThreadIDFunction &reques
         }
     }
 
-    if (request_thread_resume_function && !stop_was_requested)
+    if (initiated_by_llgs && context.m_request_resume_function && !stop_was_requested)
     {
         // We can end up here if stop was initiated by LLGS but by this time a
         // thread stop has occurred - maybe initiated by another event.
         Log ("Resuming thread %"  PRIu64 " since stop wasn't requested", tid);
-        request_thread_resume_function(tid);
+        context.m_request_resume_function (tid, true);
         context.m_state = ThreadState::Running;
     }
 }
@@ -798,28 +799,26 @@ ThreadStateCoordinator::Log (const char *format, ...)
 
 void
 ThreadStateCoordinator::NotifyThreadStop (lldb::tid_t tid,
-                                          const ThreadIDFunction &request_thread_resume_function,
+                                          bool initiated_by_llgs,
                                           const ErrorFunction &error_function)
 {
-    EnqueueEvent (EventBaseSP (new EventThreadStopped (tid, request_thread_resume_function, error_function)));
+    EnqueueEvent (EventBaseSP (new EventThreadStopped (tid, initiated_by_llgs, error_function)));
 }
 
 void
 ThreadStateCoordinator::RequestThreadResume (lldb::tid_t tid,
-                                             const ThreadIDFunction &request_thread_resume_function,
+                                             const ResumeThreadFunction &request_thread_resume_function,
                                              const ErrorFunction &error_function)
 {
-    const bool error_when_already_running = true;
-    EnqueueEvent (EventBaseSP (new EventRequestResume (tid, request_thread_resume_function, error_function, error_when_already_running)));
+    EnqueueEvent (EventBaseSP (new EventRequestResume (tid, request_thread_resume_function, error_function, true)));
 }
 
 void
 ThreadStateCoordinator::RequestThreadResumeAsNeeded (lldb::tid_t tid,
-                                                     const ThreadIDFunction &request_thread_resume_function,
+                                                     const ResumeThreadFunction &request_thread_resume_function,
                                                      const ErrorFunction &error_function)
 {
-    const bool error_when_already_running = false;
-    EnqueueEvent (EventBaseSP (new EventRequestResume (tid, request_thread_resume_function, error_function, error_when_already_running)));
+    EnqueueEvent (EventBaseSP (new EventRequestResume (tid, request_thread_resume_function, error_function, false)));
 }
 
 void
@@ -911,21 +910,4 @@ bool
 ThreadStateCoordinator::IsKnownThread (lldb::tid_t tid) const
 {
     return m_tid_map.find (tid) != m_tid_map.end ();
-}
-
-bool
-ThreadStateCoordinator::RequestThreadStop (lldb::tid_t tid)
-{
-    // Ensure we know about the thread.
-    auto find_it = m_tid_map.find (tid);
-    if (find_it == m_tid_map.end ())
-    {
-        Log ("ThreadStateCoordinator::%s failed to find tid %" PRIu64, __FUNCTION__, tid);
-        return false;
-    }
-
-    auto& context = find_it->second;
-    context.m_stop_requested = true;
-
-    return true;
 }
