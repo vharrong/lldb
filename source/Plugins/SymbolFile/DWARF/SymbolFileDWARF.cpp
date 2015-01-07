@@ -3033,7 +3033,7 @@ SymbolFileDWARF::Index ()
     m_indexed = true;
     Timer scoped_timer (__PRETTY_FUNCTION__,
                         "SymbolFileDWARF::Index (%s)",
-                        GetObjectFile()->GetFileSpec().GetFilename().AsCString());
+                        GetObjectFile()->GetFileSpec().GetFilename().AsCString("<Unknown>"));
 
     DWARFDebugInfo* debug_info = DebugInfo();
     if (debug_info)
@@ -4929,7 +4929,7 @@ SymbolFileDWARF::FindCompleteObjCDefinitionTypeForDIE (const DWARFDebugInfoEntry
                         {
                             DEBUG_PRINTF ("resolved 0x%8.8" PRIx64 " from %s to 0x%8.8" PRIx64 " (cu 0x%8.8" PRIx64 ")\n",
                                           MakeUserID(die->GetOffset()), 
-                                          m_obj_file->GetFileSpec().GetFilename().AsCString(),
+                                          m_obj_file->GetFileSpec().GetFilename().AsCString("<Unknown>"),
                                           MakeUserID(type_die->GetOffset()), 
                                           MakeUserID(type_cu->GetOffset()));
                             
@@ -6836,17 +6836,26 @@ SymbolFileDWARF::ParseType (const SymbolContext& sc, DWARFCompileUnit* dwarf_cu,
                                 byte_stride = element_type->GetByteSize();
                             ClangASTType array_element_type = element_type->GetClangForwardType();
                             uint64_t array_element_bit_stride = byte_stride * 8 + bit_stride;
-                            uint64_t num_elements = 0;
-                            std::vector<uint64_t>::const_reverse_iterator pos;
-                            std::vector<uint64_t>::const_reverse_iterator end = element_orders.rend();
-                            for (pos = element_orders.rbegin(); pos != end; ++pos)
+                            if (element_orders.size() > 0)
                             {
-                                num_elements = *pos;
-                                clang_type = ast.CreateArrayType (array_element_type, 
-                                                                  num_elements,
-                                                                  is_vector);
-                                array_element_type = clang_type;
-                                array_element_bit_stride = num_elements ? array_element_bit_stride * num_elements : array_element_bit_stride;
+                                uint64_t num_elements = 0;
+                                std::vector<uint64_t>::const_reverse_iterator pos;
+                                std::vector<uint64_t>::const_reverse_iterator end = element_orders.rend();
+                                for (pos = element_orders.rbegin(); pos != end; ++pos)
+                                {
+                                    num_elements = *pos;
+                                    clang_type = ast.CreateArrayType (array_element_type,
+                                                                      num_elements,
+                                                                      is_vector);
+                                    array_element_type = clang_type;
+                                    array_element_bit_stride = num_elements ?
+                                                               array_element_bit_stride * num_elements :
+                                                               array_element_bit_stride;
+                                }
+                            }
+                            else
+                            {
+                                clang_type = ast.CreateArrayType (array_element_type, 0, is_vector);
                             }
                             ConstString empty_name;
                             type_sp.reset( new Type (MakeUserID(die->GetOffset()), 
