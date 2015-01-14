@@ -46,7 +46,7 @@
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Utility/PseudoTerminal.h"
 
-#include "NativeCrashReason.h"
+#include "Plugins/Process/POSIX/CrashReason.h"
 #include "Plugins/Process/POSIX/POSIXThread.h"
 #include "ProcessLinux.h"
 #include "Plugins/Process/POSIX/ProcessPOSIXLog.h"

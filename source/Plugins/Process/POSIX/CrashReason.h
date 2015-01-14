@@ -12,6 +12,8 @@
 
 #include "lldb/lldb-types.h"
 
+#include <signal.h>
+
 #include <string>
 
 enum class CrashReason
@@ -53,5 +55,8 @@ GetCrashReasonString (CrashReason reason, lldb::addr_t fault_addr);
 
 const char *
 CrashReasonAsString (CrashReason reason);
+
+CrashReason
+GetCrashReason(const siginfo_t& info);
 
 #endif // #ifndef liblldb_CrashReason_H_

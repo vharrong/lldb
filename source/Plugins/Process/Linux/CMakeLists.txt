@@ -6,7 +6,6 @@ include_directories(../Utility)
 
 add_lldb_library(lldbPluginProcessLinux
   LinuxThread.cpp
-  NativeCrashReason.cpp
   NativeProcessLinux.cpp
   NativeRegisterContextLinux_x86_64.cpp
   NativeThreadLinux.cpp

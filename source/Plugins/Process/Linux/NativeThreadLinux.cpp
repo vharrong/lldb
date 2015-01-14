@@ -11,7 +11,6 @@
 
 #include <signal.h>
 
-#include "NativeCrashReason.h"
 #include "NativeProcessLinux.h"
 #include "NativeRegisterContextLinux_x86_64.h"
 

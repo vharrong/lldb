@@ -5,7 +5,6 @@ include_directories(../POSIX)
 include_directories(../Utility)
 
 add_lldb_library(lldbPluginProcessFreeBSD
-  NativeCrashReason.cpp
   ProcessFreeBSD.cpp
   FreeBSDThread.cpp
   ProcessMonitor.cpp

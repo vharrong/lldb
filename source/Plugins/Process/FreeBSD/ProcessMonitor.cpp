@@ -30,7 +30,7 @@
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Utility/PseudoTerminal.h"
 
-#include "NativeCrashReason.h"
+#include "Plugins/Process/POSIX/CrashReason.h"
 #include "POSIXThread.h"
 #include "ProcessFreeBSD.h"
 #include "ProcessPOSIXLog.h"
