@@ -218,7 +218,8 @@ NativeThreadLinux::SetWatchpoint (lldb::addr_t addr, size_t size, uint32_t watch
 {
     if (!hardware)
         return Error ("not implemented");
-    uint32_t wp_index = m_reg_context_sp->SetHardwareWatchpoint (addr, size, watch_flags);
+    uint32_t wp_index =
+        m_reg_context_sp->SetHardwareWatchpoint (addr, size, watch_flags);
     if (wp_index == LLDB_INVALID_INDEX32)
         return Error ("Setting hardware watchpoint failed.");
     return Error ();
@@ -227,7 +228,9 @@ NativeThreadLinux::SetWatchpoint (lldb::addr_t addr, size_t size, uint32_t watch
 Error
 NativeThreadLinux::RemoveWatchpoint (lldb::addr_t addr)
 {
-    if (m_reg_context_sp->ClearHardwareWatchpoint (addr))
+    NativeRegisterContextLinux_x86_64 *reg_ctx =
+        reinterpret_cast<NativeRegisterContextLinux_x86_64*> (GetRegisterContext().get());
+    if (reg_ctx->ClearHardwareWatchpointWithAddress (addr))
         return Error ();
     return Error ("Clearing hardware watchpoint failed.");
 }
