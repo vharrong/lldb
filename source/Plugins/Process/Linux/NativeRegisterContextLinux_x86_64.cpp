@@ -469,14 +469,11 @@ NativeRegisterContextLinux_x86_64::ReadRegisterRaw (uint32_t reg_index, Register
     }
 
     NativeProcessLinux *const process_p = reinterpret_cast<NativeProcessLinux*> (process_sp.get ());
-    if (!process_p->ReadRegisterValue(m_thread.GetID(),
-                                     reg_info->byte_offset,
-                                     reg_info->name,
-                                     reg_info->byte_size,
-                                     reg_value))
-        error.SetErrorString ("NativeProcessLinux::ReadRegisterValue() failed");
-
-    return error;
+    return process_p->ReadRegisterValue(m_thread.GetID(),
+                                        reg_info->byte_offset,
+                                        reg_info->name,
+                                        reg_info->byte_size,
+                                        reg_value);
 }
 
 lldb_private::Error
@@ -656,13 +653,10 @@ NativeRegisterContextLinux_x86_64::WriteRegister(const uint32_t reg,
     }
 
     NativeProcessLinux *const process_p = reinterpret_cast<NativeProcessLinux*> (process_sp.get ());
-    if (!process_p->WriteRegisterValue(m_thread.GetID(),
-                                       register_to_write_info_p->byte_offset,
-                                       register_to_write_info_p->name,
-                                       value_to_write))
-        error.SetErrorString ("NativeProcessLinux::WriteRegisterValue() failed");
-
-    return error;
+    return process_p->WriteRegisterValue(m_thread.GetID(),
+                                         register_to_write_info_p->byte_offset,
+                                         register_to_write_info_p->name,
+                                         value_to_write);
 }
 
 lldb_private::Error
@@ -942,10 +936,10 @@ NativeRegisterContextLinux_x86_64::WriteFPR()
     NativeProcessLinux *const process_p = reinterpret_cast<NativeProcessLinux*> (process_sp.get ());
 
     if (GetFPRType() == eFPRTypeFXSAVE)
-        return process_p->WriteFPR (m_thread.GetID (), &m_fpr.xstate.fxsave, sizeof (m_fpr.xstate.fxsave));
+        return process_p->WriteFPR (m_thread.GetID (), &m_fpr.xstate.fxsave, sizeof (m_fpr.xstate.fxsave)).Success();
 
     if (GetFPRType() == eFPRTypeXSAVE)
-        return process_p->WriteRegisterSet (m_thread.GetID (), &m_iovec, sizeof (m_fpr.xstate.xsave), NT_X86_XSTATE);
+        return process_p->WriteRegisterSet (m_thread.GetID (), &m_iovec, sizeof (m_fpr.xstate.xsave), NT_X86_XSTATE).Success();
     return false;
 }
 
@@ -1028,10 +1022,10 @@ NativeRegisterContextLinux_x86_64::ReadFPR ()
     switch (fpr_type)
     {
     case FPRType::eFPRTypeFXSAVE:
-        return process_p->ReadFPR (m_thread.GetID (), &m_fpr.xstate.fxsave, sizeof (m_fpr.xstate.fxsave));
+        return process_p->ReadFPR (m_thread.GetID (), &m_fpr.xstate.fxsave, sizeof (m_fpr.xstate.fxsave)).Success();
 
     case FPRType::eFPRTypeXSAVE:
-        return process_p->ReadRegisterSet (m_thread.GetID (), &m_iovec, sizeof (m_fpr.xstate.xsave), NT_X86_XSTATE);
+        return process_p->ReadRegisterSet (m_thread.GetID (), &m_iovec, sizeof (m_fpr.xstate.xsave), NT_X86_XSTATE).Success();
 
     default:
         return false;
@@ -1046,7 +1040,7 @@ NativeRegisterContextLinux_x86_64::ReadGPR()
         return false;
     NativeProcessLinux *const process_p = reinterpret_cast<NativeProcessLinux*> (process_sp.get ());
 
-    return process_p->ReadGPR (m_thread.GetID (), &m_gpr_x86_64, GetRegisterInfoInterface ().GetGPRSize ());
+    return process_p->ReadGPR (m_thread.GetID (), &m_gpr_x86_64, GetRegisterInfoInterface ().GetGPRSize ()).Success();
 }
 
 bool
@@ -1057,7 +1051,7 @@ NativeRegisterContextLinux_x86_64::WriteGPR()
         return false;
     NativeProcessLinux *const process_p = reinterpret_cast<NativeProcessLinux*> (process_sp.get ());
 
-    return process_p->WriteGPR (m_thread.GetID (), &m_gpr_x86_64, GetRegisterInfoInterface ().GetGPRSize ());
+    return process_p->WriteGPR (m_thread.GetID (), &m_gpr_x86_64, GetRegisterInfoInterface ().GetGPRSize ()).Success();
 }
 
 Error
