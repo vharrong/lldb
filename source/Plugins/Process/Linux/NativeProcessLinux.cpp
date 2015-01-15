@@ -727,7 +727,7 @@ namespace
             if (m_error.Sucess())
             {
                 ::memcpy((void *)(((unsigned char *)(&regs)) + m_offset), m_value.GetBytes(), 8);
-                m_result = if (PTRACE(PTRACE_SETREGSET, m_tid, &regset, &ioVec, sizeof regs, m_error) >= 0);
+                PTRACE(PTRACE_SETREGSET, m_tid, &regset, &ioVec, sizeof regs, m_error);
             }
         }
 #else
