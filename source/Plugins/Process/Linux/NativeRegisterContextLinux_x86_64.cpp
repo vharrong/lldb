@@ -1118,8 +1118,6 @@ NativeRegisterContextLinux_x86_64::SetHardwareWatchpointWithIndex(
     error = ReadRegisterRaw(lldb_dr7_x86_64, reg_value);
     if (error.Fail()) return error;
 
-    uint64_t control_bits = reg_value.GetAsUInt64();
-
     // for watchpoints 0, 1, 2, or 3 respectively,
     // bits 1, 3, 5, or 7
     uint64_t enable_bit = 1 << (wp_index << 1);
@@ -1135,7 +1133,7 @@ NativeRegisterContextLinux_x86_64::SetHardwareWatchpointWithIndex(
 
     uint64_t bit_mask = (0x3 | (0xF << 16)) << (wp_index << 1);
 
-    control_bits &= ~bit_mask;
+    uint64_t control_bits = reg_value.GetAsUInt64() & ~bit_mask;
 
     control_bits |= enable_bit | rw_bits | size_bits;
 
@@ -1159,18 +1157,42 @@ NativeRegisterContextLinux_x86_64::ClearHardwareWatchpoint(uint32_t wp_index)
     Error error = ReadRegisterRaw(lldb_dr7_x86_64, reg_value);
     if (error.Fail()) return false;
 
-    uint64_t control_bits = reg_value.GetAsUInt64();
-
     // for watchpoints 0, 1, 2, or 3, respectively
     // bits {0-1,16-19}, {2-3,20-23}, {4-5,24-27}, or {6-7,28-31}
     uint64_t bit_mask = (0x3 | (0xF << 16)) << (wp_index << 1);
 
-    control_bits &= ~bit_mask;
+    uint64_t control_bits = reg_value.GetAsUInt64() & ~bit_mask;
 
     error = WriteRegister(lldb_dr7_x86_64, RegisterValue(control_bits));
     if (error.Fail()) return false;
 
-    return true;
+    error = ReadRegisterRaw(lldb_dr6_x86_64, reg_value);
+    if (error.Fail()) return false;
+
+    // for watchpoints 0, 1, 2, or 3, respectively
+    // bit 0, 1, 2, or 3
+    bit_mask = 1 << wp_index;
+
+    uint64_t status_bits = reg_value.GetAsUInt64() & ~bit_mask;
+
+    error = WriteRegister(lldb_dr6_x86_64, RegisterValue(status_bits));
+
+    return error.Success();
+}
+
+bool
+NativeRegisterContextLinux_x86_64::ClearHardwareWatchpointWithAddress(lldb::addr_t addr)
+{
+    const uint32_t num_hw_watchpoints = NumSupportedHardwareWatchpoints();
+    for (uint32_t wp_index = 0; wp_index < num_hw_watchpoints; ++wp_index)
+    {
+        Error is_vacant = IsWatchpointVacant(wp_index);
+        if (is_vacant.Fail() &&
+                is_vacant.GetType() == lldb::eErrorTypeInvalid &&
+                GetWatchpointAddress(wp_index) == addr)
+            return ClearHardwareWatchpoint(wp_index);
+    }
+    return false;
 }
 
 uint32_t
