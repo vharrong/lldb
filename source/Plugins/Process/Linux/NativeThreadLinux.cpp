@@ -10,6 +10,7 @@
 #include "NativeThreadLinux.h"
 
 #include <signal.h>
+#include <sstream>
 
 #include "NativeProcessLinux.h"
 #include "NativeRegisterContextLinux_x86_64.h"
@@ -345,14 +346,16 @@ NativeThreadLinux::SetStoppedByWatchpoint ()
         reinterpret_cast<NativeRegisterContextLinux_x86_64*> (GetRegisterContext().get());
     const uint32_t num_hw_watchpoints =
         reg_ctx->NumSupportedHardwareWatchpoints();
+
+    m_stop_description.clear ();
     for (uint32_t wp_index = 0; wp_index < num_hw_watchpoints; ++wp_index)
         if (reg_ctx->IsWatchpointHit(wp_index).Success())
         {
-            m_stop_description =
-                std::to_string(reg_ctx->GetWatchpointAddress(wp_index));
+            std::ostringstream ostr;
+            ostr << reg_ctx->GetWatchpointAddress(wp_index) << " " << wp_index;
+            m_stop_description = ostr.str();
             return;
         }
-    m_stop_description = std::to_string(LLDB_INVALID_ADDRESS);
     Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
     if (log)
     {

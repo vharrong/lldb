@@ -3832,6 +3832,7 @@ GDBRemoteCommunicationServer::Handle_z (StringExtractorGDBRemote &packet)
         case '1': want_breakpoint = true;  break;
         case '2': want_breakpoint = false; break;
         case '3': want_breakpoint = false; break;
+        case '4': want_breakpoint = false; break;
         default:
             return SendIllFormedResponse(packet, "z packet had invalid software/hardware specifier");
 

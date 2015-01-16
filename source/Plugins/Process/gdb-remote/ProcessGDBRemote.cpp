@@ -1840,10 +1840,19 @@ ProcessGDBRemote::SetThreadStopInfo (StringExtractor& stop_packet)
                         }
                         else if (reason.compare("watchpoint") == 0)
                         {
-                            addr_t wp_addr = StringExtractor(description.c_str()).GetU64(LLDB_INVALID_ADDRESS);
+                            StringExtractor desc_extractor(description.c_str());
+                            addr_t wp_addr = desc_extractor.GetU64(LLDB_INVALID_ADDRESS);
+                            uint32_t wp_index = desc_extractor.GetU32(LLDB_INVALID_INDEX32);
                             watch_id_t watch_id = LLDB_INVALID_WATCH_ID;
                             if (wp_addr != LLDB_INVALID_ADDRESS)
-                                watch_id = GetTarget().GetWatchpointList().FindIDByAddress(wp_addr);
+                            {
+                                WatchpointSP wp_sp = GetTarget().GetWatchpointList().FindByAddress(wp_addr);
+                                if (wp_sp)
+                                {
+                                    wp_sp->SetHardwareIndex(wp_index);
+                                    watch_id = wp_sp->GetID();
+                                }
+                            }
                             if (watch_id == LLDB_INVALID_WATCH_ID)
                             {
                                 Log *log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_WATCHPOINTS));
