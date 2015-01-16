@@ -38,9 +38,9 @@ namespace lldb_private
 
         // Callback/block definitions.
         typedef std::function<void (lldb::tid_t tid)> ThreadIDFunction;
-        typedef std::function<Error (lldb::tid_t tid)> StopThreadFunction;
         typedef std::function<void (const char *format, va_list args)> LogFunction;
         typedef std::function<void (const std::string &error_message)> ErrorFunction;
+        typedef std::function<Error (lldb::tid_t tid)> StopThreadFunction;
         typedef std::function<Error (lldb::tid_t tid, bool supress_signal)> ResumeThreadFunction;
 
         // Constructors.
