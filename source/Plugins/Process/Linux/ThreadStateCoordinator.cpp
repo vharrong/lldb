@@ -543,11 +543,18 @@ public:
 
         // Request a resume.  We expect this to be synchronous and the system
         // to reflect it is running after this completes.
-        m_request_thread_resume_function (m_tid, false);
-
-        // Now mark it is running.
-        context.m_state = ThreadState::Running;
-        context.m_request_resume_function = m_request_thread_resume_function;
+        const auto error = m_request_thread_resume_function (m_tid, false);
+        if (error.Success ())
+        {
+            // Now mark it is running.
+            context.m_state = ThreadState::Running;
+            context.m_request_resume_function = m_request_thread_resume_function;
+        }
+        else
+        {
+            coordinator.Log ("EventRequestResume::%s failed to resume thread tid  %" PRIu64 ": %s",
+                             __FUNCTION__, m_tid, error.AsCString ());
+        }
 
         return eventLoopResultContinue;
     }
@@ -708,8 +715,16 @@ ThreadStateCoordinator::ThreadDidStop (lldb::tid_t tid, bool initiated_by_llgs, 
         // We can end up here if stop was initiated by LLGS but by this time a
         // thread stop has occurred - maybe initiated by another event.
         Log ("Resuming thread %"  PRIu64 " since stop wasn't requested", tid);
-        context.m_request_resume_function (tid, true);
-        context.m_state = ThreadState::Running;
+        const auto error = context.m_request_resume_function (tid, true);
+        if (error.Success ())
+        {
+            context.m_state = ThreadState::Running;
+        }
+        else
+        {
+            Log ("ThreadStateCoordinator::%s failed to resume thread tid  %" PRIu64 ": %s",
+                 __FUNCTION__, tid, error.AsCString ());
+        }
     }
 }
 

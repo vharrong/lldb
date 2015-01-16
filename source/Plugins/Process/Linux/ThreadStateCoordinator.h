@@ -19,6 +19,8 @@
 
 #include "lldb/lldb-types.h"
 
+#include "lldb/Core/Error.h"
+
 namespace lldb_private
 {
     class ThreadStateCoordinator
@@ -38,7 +40,7 @@ namespace lldb_private
         typedef std::function<void (lldb::tid_t tid)> ThreadIDFunction;
         typedef std::function<void (const char *format, va_list args)> LogFunction;
         typedef std::function<void (const std::string &error_message)> ErrorFunction;
-        typedef std::function<void (lldb::tid_t tid, bool supress_signal)> ResumeThreadFunction;
+        typedef std::function<Error (lldb::tid_t tid, bool supress_signal)> ResumeThreadFunction;
 
         // Constructors.
         ThreadStateCoordinator (const LogFunction &log_function);
