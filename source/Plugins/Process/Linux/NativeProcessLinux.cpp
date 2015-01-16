@@ -3873,7 +3873,7 @@ NativeProcessLinux::CallAfterRunningThreadsStop (lldb::tid_t tid,
     m_coordinator_up->CallAfterRunningThreadsStop (tid,
                                                    [=](lldb::tid_t request_stop_tid)
                                                    {
-                                                       RequestThreadStop(pid, request_stop_tid);
+                                                       return RequestThreadStop(pid, request_stop_tid);
                                                    },
                                                    call_after_function,
                                                    CoordinatorErrorHandler);
@@ -3893,7 +3893,7 @@ NativeProcessLinux::CallAfterRunningThreadsStopWithSkipTID (lldb::tid_t deferred
                                                                skip_stop_request_tid != LLDB_INVALID_THREAD_ID ? ThreadStateCoordinator::ThreadIDSet {skip_stop_request_tid} : ThreadStateCoordinator::ThreadIDSet (),
                                                                [=](lldb::tid_t request_stop_tid)
                                                                {
-                                                                   RequestThreadStop(pid, request_stop_tid);
+                                                                   return RequestThreadStop(pid, request_stop_tid);
                                                                },
                                                                call_after_function,
                                                                CoordinatorErrorHandler);
