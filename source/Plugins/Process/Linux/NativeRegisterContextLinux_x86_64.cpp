@@ -1118,14 +1118,14 @@ NativeRegisterContextLinux_x86_64::SetHardwareWatchpointWithIndex(
 
     // bits 16-17, 20-21, 24-25, or 28-29
     // with 0b01 for write, and 0b11 for read/write
-    uint64_t rw_bits = watch_flags << 16 << (wp_index << 1);
+    uint64_t rw_bits = watch_flags << 16 << (wp_index << 2);
 
     // bits 18-19, 22-23, 26-27, or 30-31
     // with 0b00, 0b01, 0b10, 0b11
     // for 1, 2, 8 (if supported), 4 bytes, respectively
-    uint64_t size_bits = (size == 8 ? 0x2 : size - 1) << 18 << (wp_index << 1);
+    uint64_t size_bits = (size == 8 ? 0x2 : size - 1) << 18 << (wp_index << 2);
 
-    uint64_t bit_mask = (0x3 | (0xF << 16)) << (wp_index << 1);
+    uint64_t bit_mask = 0x3 << (wp_index << 1) | 0xF << 16 << (wp_index << 2);
 
     uint64_t control_bits = reg_value.GetAsUInt64() & ~bit_mask;
 
@@ -1153,7 +1153,7 @@ NativeRegisterContextLinux_x86_64::ClearHardwareWatchpoint(uint32_t wp_index)
 
     // for watchpoints 0, 1, 2, or 3, respectively
     // bits {0-1,16-19}, {2-3,20-23}, {4-5,24-27}, or {6-7,28-31}
-    uint64_t bit_mask = (0x3 | (0xF << 16)) << (wp_index << 1);
+    uint64_t bit_mask = 0x3 << (wp_index << 1) | 0xF << 16 << (wp_index << 2);
 
     uint64_t control_bits = reg_value.GetAsUInt64() & ~bit_mask;
 
