@@ -311,28 +311,6 @@ namespace
         { "Floating Point Registers",   "fpu", k_num_fpr_registers_x86_64, g_fpu_regnums_x86_64 },
         { "Advanced Vector Extensions", "avx", k_num_avx_registers_x86_64, g_avx_regnums_x86_64 }
     };
-
-    inline Error WatchpointIndexError ()
-    {
-        Error error ("Watchpoint index out of range");
-        error.SetErrorToGenericError ();
-        return error;
-    }
-
-    inline Error WatchpointReadWriteBitsError ()
-    {
-
-        Error error ("Invalid read/write bits for watchpoint");
-        error.SetErrorToGenericError ();
-        return error;
-    }
-
-    inline Error WatchpointSizeError ()
-    {
-        Error error ("Invalid size for watchpoint");
-        error.SetErrorToGenericError ();
-        return error;
-    }
 }
 
 #define REG_CONTEXT_SIZE (GetRegisterInfoInterface ().GetGPRSize () + sizeof(FPR))
@@ -1058,7 +1036,7 @@ Error
 NativeRegisterContextLinux_x86_64::IsWatchpointHit(uint8_t wp_index)
 {
     if (wp_index >= NumSupportedHardwareWatchpoints())
-        return WatchpointIndexError ();
+        return Error ("Watchpoint index out of range");
 
     RegisterValue reg_value;
     Error error = ReadRegisterRaw(lldb_dr6_x86_64, reg_value);
@@ -1077,7 +1055,7 @@ Error
 NativeRegisterContextLinux_x86_64::IsWatchpointVacant(uint32_t wp_index)
 {
     if (wp_index >= NumSupportedHardwareWatchpoints())
-        return WatchpointIndexError ();
+        return Error ("Watchpoint index out of range");
 
     RegisterValue reg_value;
     Error error = ReadRegisterRaw(lldb_dr7_x86_64, reg_value);
@@ -1085,7 +1063,7 @@ NativeRegisterContextLinux_x86_64::IsWatchpointVacant(uint32_t wp_index)
 
     uint64_t control_bits = reg_value.GetAsUInt64();
 
-    bool is_vacant = !(control_bits & (1 << (wp_index << 1)));
+    bool is_vacant = !(control_bits & (1 << (2 * wp_index)));
 
     error.SetError (!is_vacant, lldb::eErrorTypeInvalid);
 
@@ -1097,13 +1075,13 @@ NativeRegisterContextLinux_x86_64::SetHardwareWatchpointWithIndex(
         lldb::addr_t addr, size_t size, uint32_t watch_flags, uint32_t wp_index) {
 
     if (wp_index >= NumSupportedHardwareWatchpoints())
-        return WatchpointIndexError ();
+        return Error ("Watchpoint index out of range");
 
     if (watch_flags != 0x1 && watch_flags != 0x3)
-        return WatchpointReadWriteBitsError ();
+        return Error ("Invalid read/write bits for watchpoint");
 
     if (size != 1 && size != 2 && size != 4 && size != 8)
-        return WatchpointSizeError ();
+        return Error ("Invalid size for watchpoint");
 
     Error error = IsWatchpointVacant (wp_index);
     if (error.Fail()) return error;
@@ -1114,18 +1092,18 @@ NativeRegisterContextLinux_x86_64::SetHardwareWatchpointWithIndex(
 
     // for watchpoints 0, 1, 2, or 3 respectively,
     // bits 1, 3, 5, or 7
-    uint64_t enable_bit = 1 << (wp_index << 1);
+    uint64_t enable_bit = 1 << (2 * wp_index);
 
     // bits 16-17, 20-21, 24-25, or 28-29
     // with 0b01 for write, and 0b11 for read/write
-    uint64_t rw_bits = watch_flags << 16 << (wp_index << 2);
+    uint64_t rw_bits = watch_flags << (16 + 4 * wp_index);
 
     // bits 18-19, 22-23, 26-27, or 30-31
     // with 0b00, 0b01, 0b10, 0b11
     // for 1, 2, 8 (if supported), 4 bytes, respectively
-    uint64_t size_bits = (size == 8 ? 0x2 : size - 1) << 18 << (wp_index << 2);
+    uint64_t size_bits = (size == 8 ? 0x2 : size - 1) << (18 + 4 * wp_index);
 
-    uint64_t bit_mask = 0x3 << (wp_index << 1) | 0xF << 16 << (wp_index << 2);
+    uint64_t bit_mask = (0x3 << (2 * wp_index)) | (0xF << (16 + 4 * wp_index));
 
     uint64_t control_bits = reg_value.GetAsUInt64() & ~bit_mask;
 
@@ -1153,7 +1131,7 @@ NativeRegisterContextLinux_x86_64::ClearHardwareWatchpoint(uint32_t wp_index)
 
     // for watchpoints 0, 1, 2, or 3, respectively
     // bits {0-1,16-19}, {2-3,20-23}, {4-5,24-27}, or {6-7,28-31}
-    uint64_t bit_mask = 0x3 << (wp_index << 1) | 0xF << 16 << (wp_index << 2);
+    uint64_t bit_mask = (0x3 << (2 * wp_index)) | (0xF << (16 + 4 * wp_index));
 
     uint64_t control_bits = reg_value.GetAsUInt64() & ~bit_mask;
 

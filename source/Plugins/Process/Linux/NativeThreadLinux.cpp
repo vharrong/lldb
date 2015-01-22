@@ -219,8 +219,9 @@ NativeThreadLinux::SetWatchpoint (lldb::addr_t addr, size_t size, uint32_t watch
 {
     if (!hardware)
         return Error ("not implemented");
+    NativeRegisterContextSP reg_ctx = GetRegisterContext ();
     uint32_t wp_index =
-        m_reg_context_sp->SetHardwareWatchpoint (addr, size, watch_flags);
+        reg_ctx->SetHardwareWatchpoint (addr, size, watch_flags);
     if (wp_index == LLDB_INVALID_INDEX32)
         return Error ("Setting hardware watchpoint failed.");
     return Error ();
