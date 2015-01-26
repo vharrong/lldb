@@ -1090,17 +1090,17 @@ NativeRegisterContextLinux_x86_64::SetHardwareWatchpointWithIndex(
     error = ReadRegisterRaw(lldb_dr7_x86_64, reg_value);
     if (error.Fail()) return error;
 
-    // for watchpoints 0, 1, 2, or 3 respectively,
-    // bits 1, 3, 5, or 7
+    // for watchpoints 0, 1, 2, or 3, respectively,
+    // set bits 1, 3, 5, or 7
     uint64_t enable_bit = 1 << (2 * wp_index);
 
-    // bits 16-17, 20-21, 24-25, or 28-29
+    // set bits 16-17, 20-21, 24-25, or 28-29
     // with 0b01 for write, and 0b11 for read/write
     uint64_t rw_bits = watch_flags << (16 + 4 * wp_index);
 
-    // bits 18-19, 22-23, 26-27, or 30-31
-    // with 0b00, 0b01, 0b10, 0b11
-    // for 1, 2, 8 (if supported), 4 bytes, respectively
+    // set bits 18-19, 22-23, 26-27, or 30-31
+    // with 0b00, 0b01, 0b10, or 0b11
+    // for 1, 2, 8 (if supported), or 4 bytes, respectively
     uint64_t size_bits = (size == 8 ? 0x2 : size - 1) << (18 + 4 * wp_index);
 
     uint64_t bit_mask = (0x3 << (2 * wp_index)) | (0xF << (16 + 4 * wp_index));
@@ -1126,45 +1126,45 @@ NativeRegisterContextLinux_x86_64::ClearHardwareWatchpoint(uint32_t wp_index)
         return false;
 
     RegisterValue reg_value;
-    Error error = ReadRegisterRaw(lldb_dr7_x86_64, reg_value);
+
+    // for watchpoints 0, 1, 2, or 3, respectively,
+    // clear bits 0, 1, 2, or 3 of the debug status register (DR6)
+    Error error = ReadRegisterRaw(lldb_dr6_x86_64, reg_value);
     if (error.Fail()) return false;
-
-    // for watchpoints 0, 1, 2, or 3, respectively
-    // bits {0-1,16-19}, {2-3,20-23}, {4-5,24-27}, or {6-7,28-31}
-    uint64_t bit_mask = (0x3 << (2 * wp_index)) | (0xF << (16 + 4 * wp_index));
-
-    uint64_t control_bits = reg_value.GetAsUInt64() & ~bit_mask;
-
-    error = WriteRegister(lldb_dr7_x86_64, RegisterValue(control_bits));
-    if (error.Fail()) return false;
-
-    error = ReadRegisterRaw(lldb_dr6_x86_64, reg_value);
-    if (error.Fail()) return false;
-
-    // for watchpoints 0, 1, 2, or 3, respectively
-    // bit 0, 1, 2, or 3
-    bit_mask = 1 << wp_index;
-
+    uint64_t bit_mask = 1 << wp_index;
     uint64_t status_bits = reg_value.GetAsUInt64() & ~bit_mask;
-
     error = WriteRegister(lldb_dr6_x86_64, RegisterValue(status_bits));
+    if (error.Fail()) return false;
 
-    return error.Success();
+    // for watchpoints 0, 1, 2, or 3, respectively,
+    // clear bits {0-1,16-19}, {2-3,20-23}, {4-5,24-27}, or {6-7,28-31}
+    // of the debug control register (DR7)
+    error = ReadRegisterRaw(lldb_dr7_x86_64, reg_value);
+    if (error.Fail()) return false;
+    bit_mask = (0x3 << (2 * wp_index)) | (0xF << (16 + 4 * wp_index));
+    uint64_t control_bits = reg_value.GetAsUInt64() & ~bit_mask;
+    return WriteRegister(lldb_dr7_x86_64, RegisterValue(control_bits)).Success();
 }
 
-bool
-NativeRegisterContextLinux_x86_64::ClearHardwareWatchpointWithAddress(lldb::addr_t addr)
+Error
+NativeRegisterContextLinux_x86_64::ClearAllHardwareWatchpoints()
 {
-    const uint32_t num_hw_watchpoints = NumSupportedHardwareWatchpoints();
-    for (uint32_t wp_index = 0; wp_index < num_hw_watchpoints; ++wp_index)
-    {
-        Error is_vacant = IsWatchpointVacant(wp_index);
-        if (is_vacant.Fail() &&
-                is_vacant.GetType() == lldb::eErrorTypeInvalid &&
-                GetWatchpointAddress(wp_index) == addr)
-            return ClearHardwareWatchpoint(wp_index);
-    }
-    return false;
+    RegisterValue reg_value;
+
+    // clear bits {0-4} of the debug status register (DR6)
+    Error error = ReadRegisterRaw(lldb_dr6_x86_64, reg_value);
+    if (error.Fail()) return error;
+    uint64_t bit_mask = 0xF;
+    uint64_t status_bits = reg_value.GetAsUInt64() & ~bit_mask;
+    error = WriteRegister(lldb_dr6_x86_64, RegisterValue(status_bits));
+    if (error.Fail()) return error;
+
+    // clear bits {0-7,16-31} of the debug control register (DR7)
+    error = ReadRegisterRaw(lldb_dr7_x86_64, reg_value);
+    if (error.Fail()) return error;
+    bit_mask = 0xFF | (0xFFFF << 16);
+    uint64_t control_bits = reg_value.GetAsUInt64() & ~bit_mask;
+    return WriteRegister(lldb_dr7_x86_64, RegisterValue(control_bits));
 }
 
 uint32_t

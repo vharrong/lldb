@@ -51,8 +51,8 @@ namespace lldb_private
         bool
         ClearHardwareWatchpoint(uint32_t wp_index);
 
-        bool
-        ClearHardwareWatchpointWithAddress(lldb::addr_t addr);
+        Error
+        ClearAllHardwareWatchpoints ();
 
         Error
         SetHardwareWatchpointWithIndex(lldb::addr_t addr, size_t size,

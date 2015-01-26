@@ -219,20 +219,26 @@ NativeThreadLinux::SetWatchpoint (lldb::addr_t addr, size_t size, uint32_t watch
 {
     if (!hardware)
         return Error ("not implemented");
+    Error error = RemoveWatchpoint(addr);
+    if (error.Fail()) return error;
     NativeRegisterContextSP reg_ctx = GetRegisterContext ();
     uint32_t wp_index =
         reg_ctx->SetHardwareWatchpoint (addr, size, watch_flags);
     if (wp_index == LLDB_INVALID_INDEX32)
         return Error ("Setting hardware watchpoint failed.");
+    m_watchpoint_index_map.insert({addr, wp_index});
     return Error ();
 }
 
 Error
 NativeThreadLinux::RemoveWatchpoint (lldb::addr_t addr)
 {
-    NativeRegisterContextLinux_x86_64 *reg_ctx =
-        reinterpret_cast<NativeRegisterContextLinux_x86_64*> (GetRegisterContext().get());
-    if (reg_ctx->ClearHardwareWatchpointWithAddress (addr))
+    auto wp = m_watchpoint_index_map.find(addr);
+    if (wp == m_watchpoint_index_map.end())
+        return Error ();
+    uint32_t wp_index = wp->second;
+    m_watchpoint_index_map.erase(wp);
+    if (GetRegisterContext()->ClearHardwareWatchpoint(wp_index))
         return Error ();
     return Error ("Clearing hardware watchpoint failed.");
 }
@@ -260,6 +266,20 @@ NativeThreadLinux::SetRunning ()
 
     m_stop_info.reason = StopReason::eStopReasonNone;
     m_stop_description.clear();
+
+    // If watchpoints have been set, but none on this thread,
+    // then this is a new thread. So set all existing watchpoints.
+    if (m_watchpoint_index_map.empty())
+    {
+        const auto &watchpoint_map = GetProcess()->GetWatchpointMap();
+        if (watchpoint_map.empty()) return;
+        GetRegisterContext()->ClearAllHardwareWatchpoints();
+        for (const auto &pair : watchpoint_map)
+        {
+            const auto& wp = pair.second;
+            SetWatchpoint(wp.m_addr, wp.m_size, wp.m_watch_flags, wp.m_hardware);
+        }
+    }
 }
 
 void
