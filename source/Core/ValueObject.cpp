@@ -1507,14 +1507,14 @@ ValueObject::GetValueAsSigned (int64_t fail_value, bool *success)
         {
             if (success)
                 *success = true;
-                return scalar.SLongLong(fail_value);
+            return scalar.SLongLong(fail_value);
         }
         // fallthrough, otherwise...
     }
     
     if (success)
         *success = false;
-        return fail_value;
+    return fail_value;
 }
 
 // if any more "special cases" are added to ValueObject::DumpPrintableRepresentation() please keep
@@ -4130,16 +4130,22 @@ ValueObject::GetRoot ()
 {
     if (m_root)
         return m_root;
-    ValueObject* parent = m_parent;
-    if (!parent)
-        return (m_root = this);
-    while (parent->m_parent)
+    return (m_root = FollowParentChain( [] (ValueObject* vo) -> bool {
+        return (vo->m_parent != nullptr);
+    }));
+}
+
+ValueObject*
+ValueObject::FollowParentChain (std::function<bool(ValueObject*)> f)
+{
+    ValueObject* vo = this;
+    while (vo)
     {
-        if (parent->m_root)
-            return (m_root = parent->m_root);
-        parent = parent->m_parent;
+        if (f(vo) == false)
+            break;
+        vo = vo->m_parent;
     }
-    return (m_root = parent);
+    return vo;
 }
 
 AddressType

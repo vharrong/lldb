@@ -676,7 +676,6 @@
 		26FFC19C14FC072100087D58 /* DYLDRendezvous.h in Headers */ = {isa = PBXBuildFile; fileRef = 26FFC19614FC072100087D58 /* DYLDRendezvous.h */; };
 		26FFC19D14FC072100087D58 /* DynamicLoaderPOSIXDYLD.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26FFC19714FC072100087D58 /* DynamicLoaderPOSIXDYLD.cpp */; };
 		26FFC19E14FC072100087D58 /* DynamicLoaderPOSIXDYLD.h in Headers */ = {isa = PBXBuildFile; fileRef = 26FFC19814FC072100087D58 /* DynamicLoaderPOSIXDYLD.h */; };
-		33064C9A1A5C7A330033D415 /* UriParser.cpp in CopyFiles */ = {isa = PBXBuildFile; fileRef = 33064C991A5C7A330033D415 /* UriParser.cpp */; };
 		33064C9C1A5C7A490033D415 /* UriParser.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 33064C9B1A5C7A490033D415 /* UriParser.h */; };
 		33E5E8421A672A240024ED68 /* StringConvert.cpp in CopyFiles */ = {isa = PBXBuildFile; fileRef = 33E5E8411A672A240024ED68 /* StringConvert.cpp */; };
 		33E5E8461A6736D30024ED68 /* StringConvert.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 33E5E8451A6736D30024ED68 /* StringConvert.h */; };
@@ -851,6 +850,7 @@
 		AF25AB27188F685C0030DEC3 /* AppleGetQueuesHandler.h in Headers */ = {isa = PBXBuildFile; fileRef = AF25AB25188F685C0030DEC3 /* AppleGetQueuesHandler.h */; };
 		AF26703A1852D01E00B6CC36 /* Queue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AF2670381852D01E00B6CC36 /* Queue.cpp */; };
 		AF26703B1852D01E00B6CC36 /* QueueList.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AF2670391852D01E00B6CC36 /* QueueList.cpp */; };
+		AF2BA6EC1A707E3400C5248A /* UriParser.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 33064C991A5C7A330033D415 /* UriParser.cpp */; };
 		AF2BCA6C18C7EFDE005B4526 /* JITLoaderGDB.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AF2BCA6918C7EFDE005B4526 /* JITLoaderGDB.cpp */; };
 		AF2BCA6D18C7EFDE005B4526 /* JITLoaderGDB.h in Headers */ = {isa = PBXBuildFile; fileRef = AF2BCA6A18C7EFDE005B4526 /* JITLoaderGDB.h */; };
 		AF37E10A17C861F20061E18E /* ProcessRunLock.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AF37E10917C861F20061E18E /* ProcessRunLock.cpp */; };
@@ -1071,7 +1071,6 @@
 				33E5E8461A6736D30024ED68 /* StringConvert.h in CopyFiles */,
 				33064C9C1A5C7A490033D415 /* UriParser.h in CopyFiles */,
 				33E5E8421A672A240024ED68 /* StringConvert.cpp in CopyFiles */,
-				33064C9A1A5C7A330033D415 /* UriParser.cpp in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
@@ -5323,6 +5322,7 @@
 			buildPhases = (
 				26F5C26710F3D9A4009D5894 /* Sources */,
 				26F5C26810F3D9A4009D5894 /* Frameworks */,
+				25ED0ED41A70979C00E3DA2E /* ShellScript */,
 			);
 			buildRules = (
 			);
@@ -5455,6 +5455,19 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		25ED0ED41A70979C00E3DA2E /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"${CONFIGURATION}\" != BuildAndIntegration ]\nthen\ncodesign -f -s lldb_codesign \"${TARGET_BUILD_DIR}/${PRODUCT_NAME}\"\nfi";
+		};
 		261B5A7511C3FA6F00AABD0A /* Fixup Framework Headers */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -5777,6 +5790,7 @@
 				2689006913353E0E00698AC0 /* ASTStructExtractor.cpp in Sources */,
 				2689006A13353E0E00698AC0 /* IRDynamicChecks.cpp in Sources */,
 				2689006B13353E0E00698AC0 /* IRForTarget.cpp in Sources */,
+				AF2BA6EC1A707E3400C5248A /* UriParser.cpp in Sources */,
 				2689006D13353E0E00698AC0 /* IRExecutionUnit.cpp in Sources */,
 				2689006E13353E1A00698AC0 /* File.cpp in Sources */,
 				94D6A0AB16CEB55F00833B6E /* NSDictionary.cpp in Sources */,
@@ -7093,7 +7107,7 @@
 					__TEXT,
 					__info_plist,
 					"$(PROJECT_DIR)/tools/driver/lldb-Info.plist",
-					"-Wl,-rpath,@loader_path/../../Library/PrivateFrameworks/",
+					"-Wl,-rpath,@loader_path/../../Library/PrivateFrameworks",
 					"-Wl,-rpath,@loader_path/../../../SharedFrameworks",
 					"-Wl,-rpath,@loader_path/../../System/Library/PrivateFrameworks",
 					"-Wl,-rpath,@loader_path/../../Library/PrivateFrameworks",
@@ -7917,7 +7931,7 @@
 					__TEXT,
 					__info_plist,
 					"$(PROJECT_DIR)/tools/driver/lldb-Info.plist",
-					"-Wl,-rpath,@loader_path/",
+					"-Wl,-rpath,@loader_path",
 				);
 				PRODUCT_NAME = lldb;
 				USER_HEADER_SEARCH_PATHS = "$(SRCROOT)/include $(SRCROOT)/source";
@@ -7945,7 +7959,7 @@
 					__TEXT,
 					__info_plist,
 					"$(PROJECT_DIR)/tools/driver/lldb-Info.plist",
-					"-Wl,-rpath,@loader_path/",
+					"-Wl,-rpath,@loader_path",
 				);
 				PRODUCT_NAME = lldb;
 				USER_HEADER_SEARCH_PATHS = "$(SRCROOT)/include $(SRCROOT)/source";
@@ -8077,7 +8091,7 @@
 					__TEXT,
 					__info_plist,
 					"$(PROJECT_DIR)/tools/driver/lldb-Info.plist",
-					"-Wl,-rpath,@loader_path/",
+					"-Wl,-rpath,@loader_path",
 				);
 				PRODUCT_NAME = lldb;
 				USER_HEADER_SEARCH_PATHS = "$(SRCROOT)/include $(SRCROOT)/source";
